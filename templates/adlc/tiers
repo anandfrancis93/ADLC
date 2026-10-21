@@ -1,0 +1,8 @@
+# ADLC path-to-tier map. One rule per line: <T1|T2|T3> <glob>. Highest match wins.
+# Unmatched files are T2. See docs/risk-tiers.md in the ADLC repo.
+T1 docs/**
+T1 **/*.md
+T1 **/*.css
+T3 .github/workflows/**
+T3 .adlc/**
+# T3 <data, schema, auth, grading or scoring, migration, public interface paths>

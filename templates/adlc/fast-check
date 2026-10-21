@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# Pre-commit fast check. Receives the staged file paths as arguments.
+# Format, lint and type-check only those files. Never run the full test suite here.
+set -euo pipefail
+[ "$#" -eq 0 ] && exit 0
+# Example for a Node repo:
+# npx prettier --check "$@"
+# npx eslint "$@"
+echo "ADLC: edit .adlc/fast-check to run this repo's formatter and linter" >&2

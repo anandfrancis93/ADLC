@@ -1,0 +1,8 @@
+{
+  "name": "adlc",
+  "description": "The ADLC plugin for Anand's repos.",
+  "owner": { "name": "Anand Francis" },
+  "plugins": [
+    { "name": "adlc", "source": "./", "description": "Risk tiers, review budget, test-once, retire." }
+  ]
+}

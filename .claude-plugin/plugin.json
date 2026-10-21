@@ -1,0 +1,9 @@
+{
+  "name": "adlc",
+  "displayName": "ADLC",
+  "version": "0.1.0",
+  "description": "Agent development lifecycle: risk tiers, review budget, test-once, retire. Skills, a budgeted reviewer, and a protected-path hook.",
+  "author": { "name": "Anand Francis" },
+  "repository": "https://github.com/anandfrancis93/ADLC",
+  "keywords": ["lifecycle", "review", "risk-tiers"]
+}

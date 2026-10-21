@@ -1,0 +1,3 @@
+# Paths an agent may not edit (Claude Code plugin hook). One glob per line.
+# Empty by default. For a T3 bug fix, list the committed failing test here
+# until the fix merges, so the fix cannot weaken the test.

@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Full test suite. Runs once per change, in CI only (not in git hooks).
+set -euo pipefail
+# Example for a Node repo:
+# npm ci && npm test
+echo "ADLC: edit .adlc/full-test to run this repo's full test suite" >&2
+exit 1

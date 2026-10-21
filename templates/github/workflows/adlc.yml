@@ -1,0 +1,87 @@
+# ADLC checks. Copy to .github/workflows/adlc.yml.
+# Repo variables: ADLC_OWNER (GitHub login that approves T3), ADLC_REVIEWERS
+# (comma-separated logins of agent reviewers, e.g. "claude[bot]").
+# Make "full-test" and "t3-approval" required checks in branch protection.
+name: ADLC
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  pull_request_review:
+    types: [submitted, dismissed]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  tier:
+    runs-on: ubuntu-latest
+    outputs:
+      tier: ${{ steps.tier.outputs.tier }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: tier
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          tier=$(git diff --name-only "$BASE" "$HEAD" | python3 .adlc/scripts/adlc.py tier --explain)
+          echo "tier=$tier" >> "$GITHUB_OUTPUT"
+          echo "Tier: $tier" >> "$GITHUB_STEP_SUMMARY"
+      - name: Label the PR with its tier
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          TIER: ${{ steps.tier.outputs.tier }}
+        run: |
+          for t in T1 T2 T3; do gh label create "adlc:$t" --force >/dev/null; done
+          gh pr edit "$PR" --remove-label adlc:T1,adlc:T2,adlc:T3 --add-label "adlc:$TIER"
+
+  # The only place the full suite runs. Not re-run on review events.
+  full-test:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: .adlc/full-test
+
+  review-budget:
+    if: github.event_name == 'pull_request_review' && vars.ADLC_REVIEWERS != ''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          REVIEWERS: ${{ vars.ADLC_REVIEWERS }}
+        run: |
+          rounds=$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR/reviews" \
+            | jq -s 'add' | python3 .adlc/scripts/adlc.py review-rounds --reviewers "$REVIEWERS")
+          echo "Agent review rounds: $rounds" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$rounds" -ge 2 ]; then
+            gh label create adlc:owner-decides --force >/dev/null
+            gh pr edit "$PR" --add-label adlc:owner-decides
+          fi
+
+  t3-approval:
+    needs: tier
+    runs-on: ubuntu-latest
+    steps:
+      - if: needs.tier.outputs.tier == 'T3'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+          OWNER: ${{ vars.ADLC_OWNER }}
+        run: |
+          approved=$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR/reviews" | jq -s 'add' \
+            | jq --arg o "$OWNER" --arg h "$HEAD" \
+              '[.[] | select((.user.login|ascii_downcase)==($o|ascii_downcase) and .state=="APPROVED" and .commit_id==$h)] | length')
+          if [ "$approved" -eq 0 ]; then
+            echo "T3 change: needs an approval from $OWNER on commit $HEAD." >&2
+            exit 1
+          fi

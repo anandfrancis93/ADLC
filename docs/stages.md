@@ -5,7 +5,8 @@ and the tier decides how much of stages 2 to 6 a change goes through
 ([risk-tiers.md](risk-tiers.md)). Stage 7 feeds new intents back to stage 1.
 
 ## 1 Plan
-- Write the intent: what is wanted, why, constraints, open questions.
+- Write the intent: what is wanted, why, constraints, open questions, and when it is done.
+  "Done" names the check that proves it: a test, a command or a page to load.
 - T1: one line in the PR. T2: an issue. T3: the Intent section of `docs/specs/YYYY-MM-DD-<slug>.md`.
 - Set the tier with `scripts/adlc.py tier` on the planned files. A person may raise a tier, never lower it.
 
@@ -29,6 +30,8 @@ and the tier decides how much of stages 2 to 6 a change goes through
 - T3: commit a failing test before the fix; the fix must not edit that test. List the test in
   `.adlc/protected` in the same commit; CI fails any later commit that edits it.
 - T3: re-run only the proof records whose input hash changed. Full re-proof runs on a schedule.
+- A fix for a flaky test runs that one test many times, on the base and on the branch.
+  The base must fail at least once and the branch never. This is the one repeated run.
 
 ## 5 Review
 - One agent review per PR against `REVIEW.md`. See [review-budget.md](review-budget.md).
@@ -41,8 +44,12 @@ and the tier decides how much of stages 2 to 6 a change goes through
 
 ## 7 Operate
 - Monitors, scheduled scans and incidents open issues that start at stage 1.
+- A scheduled check that cannot run reports a failure. It never reports zero findings.
+- A scheduled agent gets read-only tokens wherever it only reads.
+- An agent that reads issues, PRs or comments from people outside the repo may only comment.
+  It never pushes, merges or changes settings.
 - Dependabot opens weekly version updates, and security updates outside that schedule. See [toolchain.md](toolchain.md).
 - Each incident adds a regression test or eval.
 
 ## 8 Retire
-- Monthly, and when `AGENTS.md` passes 60 lines. See [retire.md](retire.md).
+- Monthly, when `AGENTS.md` passes 60 lines, and when the main AI model changes. See [retire.md](retire.md).

@@ -4,6 +4,7 @@ Date: YYYY-MM-DD. PR: #<number>. Tier: T3.
 
 ## Intent
 What is wanted, why, constraints, open questions.
+Done when: the test, command or check that proves it.
 
 ## Tests to add
 - `<test name>`: <what it asserts>

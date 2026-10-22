@@ -7,6 +7,7 @@
 
 ## Tags
 - Important: would break behavior, leak data or breach a policy. Only Important blocks.
+  Say how to show it fails: an input, a test or a command.
 - Nit: at most five per review; summarize the rest as a count. Never blocking.
 - Pre-existing: a bug this PR did not introduce. Report it; do not block.
 

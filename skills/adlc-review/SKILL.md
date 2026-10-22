@@ -4,11 +4,15 @@ description: Review a pull request under the ADLC review budget. One review, onl
 ---
 # ADLC Review
 
+Review in a fresh session that did not write the change. If this session wrote it, stop and
+ask for a new session or another model.
+
 Read `REVIEW.md` first. Then:
 
 1. Review the diff against the whole repo and the PR's stated intent.
 2. Tag every finding:
-   - **Important**: would break behavior, leak data or breach a policy. Give file, line and evidence.
+   - **Important**: would break behavior, leak data or breach a policy. Give file, line, evidence,
+     and how to show it fails (an input, a test or a command).
    - **Nit**: at most five; summarize the rest as a count.
    - **Pre-existing**: a bug the PR did not introduce. Never blocking.
 3. Drop style-only, diagnostics-only and cleanup-only findings, and anything CI enforces.

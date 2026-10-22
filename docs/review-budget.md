@@ -1,8 +1,12 @@
 # Review budget
 
 1. One agent review per PR, against the repo's `REVIEW.md`. Any model may review.
+   The review runs in a fresh session, not the one that wrote the change, because a model
+   tends to favour results it produced. A fresh session drops the author's reasoning; a
+   different model is better still.
 2. Findings are tagged **Important**, **Nit** or **Pre-existing**.
    - Important: would break behavior, leak data or breach a policy. Only Important blocks.
+     Each one says how to show it fails: an input, a test or a command.
    - Nit: at most five, listed, never blocking.
    - Pre-existing: a bug the PR did not introduce. Reported, not blocking.
 3. Style-only, diagnostics-only and cleanup-only findings are dropped.

@@ -16,8 +16,6 @@ Write all prose for people (PRs, commits, reviews, docs, replies) by the `adlc-w
 ## Risk tiers
 Path-to-tier map: `.adlc/tiers`. Protected paths: `.adlc/protected`.
 
-## Architecture
-- <dir>/: <what it holds>
-
 ## Facts an agent would get wrong
+<!-- Gotchas the file tree does not show. Skip what an agent can see by reading the repo. -->
 - <fact>

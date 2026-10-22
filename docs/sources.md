@@ -31,3 +31,31 @@ discriminating.
 | [Karpathy on making LLM output easier to understand](https://x.com/karpathy/status/2105819303471976479), 1 Oct 2026, and [SKYbrary: Simplified Technical English](https://skybrary.aero/articles/simplified-technical-english-ste) (secondary source) | `adlc-writing`: 20-word instructions, 25-word descriptions, 6-sentence paragraphs, one instruction per sentence; aim for most of it, not all. Diagrams over prose for flows. ASD-STE100 itself is copyrighted, so the rules are in our own words |
 | [GitHub: creating diagrams](https://docs.github.com/en/get-started/writing-on-github/working-with-advanced-formatting/creating-diagrams) | Mermaid renders in Markdown files and PRs |
 | [Dependabot options reference](https://docs.github.com/en/code-security/reference/supply-chain-security/dependabot-options-reference), [dependabot/fetch-metadata](https://github.com/dependabot/fetch-metadata) | Weekly schedule, groups by update type, `commit-message` prefix, cooldown for version updates only; read-only token on Dependabot `pull_request` runs |
+
+## claude.dev articles (read on 22 Oct 2026)
+
+The blog had 16 posts. The code review post is listed above.
+
+| Source | What the ADLC takes from it |
+| --- | --- |
+| [How we made claude.ai 3x faster in two weeks](https://claude.dev/blog/how-we-made-claude-ai-faster/), Raymond Wang, Sam Attard, Issac G., 23 Sep 2026 | Retire ramp flags and keep kill switches; flaky-test proof by repeated runs on main and on the branch; before and after screenshots for user-visible changes |
+| [The new rules of context engineering for Claude 5 generation models](https://claude.dev/blog/the-new-rules-of-context-engineering-for-claude-5-generation-models/), Thariq Shihipar, 24 Jul 2026 | AGENTS.md holds gotchas, not what the file tree shows; after a model change, remove old workarounds and conflicting instructions |
+| [Lessons from building Claude Code: How we use skills](https://claude.dev/blog/lessons-from-building-claude-code-how-we-use-skills/), Thariq Shihipar, 3 Jun 2026 | Skills join the Retire list, valued by use; gotchas over the obvious |
+| [A harness for every task: dynamic workflows in Claude Code](https://claude.dev/blog/a-harness-for-every-task-dynamic-workflows-in-claude-code/), Thariq Shihipar, Sid Bidasaria, 2 Jun 2026 | Review in a fresh session, because a model favours its own work; agents that read public content take no write actions |
+| [Claude Code in the cloud](https://claude.dev/blog/claude-code-in-the-cloud/), Addy Osmani, 6 Oct 2026 | Each intent says when it is done and which check proves it; flaky-test proof by repeated runs |
+| [Building effective agent automations](https://claude.dev/blog/building-effective-agent-automations/), Lance Martin, CJ Avilla, 8 Oct 2026 | A scheduled check that cannot run reports a failure, never zero findings; read-only tokens for scheduled agents |
+| [Getting started with Claude Code mods](https://claude.dev/blog/getting-started-with-claude-code-mods/), Addy Osmani, 1 Oct 2026 | A tool-call hook is a safety net, not a hard block, so the hard block for `.adlc/protected` belongs in CI |
+| [Building with Claude Sonnet 5.5](https://claude.dev/blog/building-with-claude-sonnet-5-5/), Addy Osmani, 28 Sep 2026 | A check that did not start, or only checked syntax, is not a pass; remove prompt workarounds after a model change |
+| [What a task costs on Opus 5.5](https://claude.dev/blog/what-a-task-costs-on-opus-5-5/), Addy Osmani, 25 Sep 2026 | After a model change, remove ritual instructions such as verify-twice rules |
+| [Getting the most out of Opus 5.5 in Claude and Claude Code](https://claude.dev/blog/getting-the-most-out-of-opus-5-5/), Addy Osmani, 22 Sep 2026 | Name the finish line; an Important finding says how to show it fails; delete "think carefully" lines |
+| [Automating eval design and hillclimbing with Claude](https://claude.dev/blog/automating-eval-design-and-hillclimbing/), Lance Martin, 28 Sep 2026 | The judge should not be the model it judges, which backs "a different model is better still" in review |
+| [Seeing like an agent](https://claude.dev/blog/seeing-like-an-agent/), Thariq Shihipar, 10 Apr 2026 | Revisit old scaffolding as models improve |
+
+The model-change findings come from tests with Claude models only. CI
+still enforces the rules that matter for every tool. Two posts were not used:
+the HTML post (ADLC files are reviewed as Markdown diffs) and the prompt
+caching post (agent harness design). Effort per stage (from
+[Spending your effort](https://claude.dev/blog/spending-your-effort/), Thariq
+Shihipar, 25 Sep 2026), eval rules and ratchet checks wait until a repo needs
+them. The page dates differ from the sitemap
+for the six oldest posts; the table uses the page dates.

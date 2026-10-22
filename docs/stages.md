@@ -41,6 +41,8 @@ and the tier decides how much of stages 2 to 6 a change goes through
 - T3: the owner approves. Where the repo deploys, use a feature flag or staged rollout and a tested rollback.
 - Repos that ship releases: SemVer version, Common Changelog entry written at release time, tag `vX.Y.Z`.
   See [commits-and-releases.md](commits-and-releases.md).
+- Where the repo deploys on a push to main, watch the deploy run until it ends.
+  If it fails, tell the owner at once and name the failed step.
 
 ## 7 Operate
 - Monitors, scheduled scans and incidents open issues that start at stage 1.

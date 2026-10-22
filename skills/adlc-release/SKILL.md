@@ -1,6 +1,6 @@
 ---
 name: adlc-release
-description: Decide whether an ADLC pull request may merge, by tier. Use when a PR's checks have finished and the question is whether to merge.
+description: Decide whether an ADLC pull request may merge, by tier, and watch the deploy after the merge. Use when a PR's checks have finished and the question is whether to merge.
 ---
 # ADLC Release
 
@@ -12,3 +12,8 @@ description: Decide whether an ADLC pull request may merge, by tier. Use when a 
    findings for the owner, who merges or closes it.
 5. Merge with squash; the commit title is the PR title. Versioned releases are a separate
    step: use the `adlc-version` skill.
+6. If the repo deploys on a push to main, watch the deploy run until it ends.
+   For GitHub Actions, find the run with `gh run list --commit <merge-sha>`,
+   then run `gh run watch <run-id> --exit-status`.
+   If the run fails, tell the owner at once and name the failed step.
+   `gh run view <run-id> --log-failed` shows the failed step.

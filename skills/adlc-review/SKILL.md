@@ -19,6 +19,9 @@ Read `REVIEW.md` first. Then:
 4. Flag the class of bug with every instance, not one line.
 5. On round 2: review only the diff since round 1. Do not repeat any finding already posted.
 6. Start the summary with the number of Important findings. If it is zero, say so plainly.
+7. Post the summary as one comment on the PR. Submit it as a review with the Comment option,
+   so CI counts the round: `gh pr review <number> --comment --body-file <file>`.
+   The `adlc-release` skill reads it to check that no Important finding is open.
 
 There is no round 3. After 2 rounds the owner decides.
 A finding that keeps recurring goes in `.adlc/retire-log.md` as a candidate check,

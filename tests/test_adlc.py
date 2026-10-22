@@ -707,21 +707,47 @@ class Workflows(unittest.TestCase):
     def job(self, name, job):
         with open(os.path.join(ROOT, ".github", "workflows", name)) as f:
             text = f.read()
-        return re.search(rf"(?ms)^  {job}:\n.*?(?=^  [a-z0-9-]+:\n|\Z)", text.split("\njobs:\n", 1)[1]).group(0)
+        # A job ends at the next job, or at the comment above it.
+        return re.search(rf"(?ms)^  {job}:\n.*?(?=^  #|^  [a-z0-9-]+:\n|\Z)", text.split("\njobs:\n", 1)[1]).group(0)
 
-    def test_t3_approval_is_the_same_in_both_workflows_and_runs_when_tier_fails(self):
+    def test_t3_approval_is_the_same_in_both_workflows_and_fails_when_the_tier_fails(self):
         job = self.job("adlc.yml", "t3-approval")
         self.assertEqual(job, self.job("adlc-review.yml", "t3-approval"))
-        self.assertIn("!cancelled()", job)
-        self.assertIn("needs.tier.result != 'success'", job)
+        # The tier and the approval are steps of one job, so a failed tier fails the check.
+        # In a separate job, the approval would be skipped, and a skipped check counts as passed.
+        self.assertIn("adlc.py tier --explain", job)
+        self.assertIn("adlc.py t3-approved", job)
+        self.assertNotIn("needs:", job)
+        self.assertNotIn("continue-on-error", job)
+        # Without pipefail, a failed git diff gives an empty list, which is T1.
+        self.assertIn("      - id: tier\n        shell: bash\n", job)
 
     def test_label_changes_rerun_the_review_caller(self):
         with open(os.path.join(ROOT, "templates", "github", "workflows", "adlc-review.yml")) as f:
             self.assertIn("  pull_request:\n    types: [labeled, unlabeled]\n", f.read())
-        self.assertIn("synchronize", self.job("adlc.yml", "tier"))
+        self.assertIn("synchronize", self.job("adlc.yml", "t3-approval"))
 
     def test_review_runs_only_review_jobs(self):
-        self.assertEqual(self.jobs("adlc-review.yml"), {"tier", "t3-approval", "review-budget"})
-        self.assertTrue({"drift", "fast-check", "secrets", "protected", "full-test"} <= self.jobs("adlc.yml"))
+        self.assertEqual(self.jobs("adlc-review.yml"), {"t3-approval", "review-budget"})
+        self.assertEqual(self.jobs("adlc.yml"), {"t3-approval", "checks"})
         with open(os.path.join(ROOT, "templates", "github", "workflows", "adlc.yml")) as f:
             self.assertNotIn("pull_request_review", f.read())
+
+    def test_one_job_runs_every_check_and_reports_each_failure(self):
+        """GitHub bills each job as at least one minute, so the checks are steps of one job."""
+        steps = re.split(r"(?m)^      - ", self.job("adlc.yml", "checks"))[1:]
+
+        def field(step, key):
+            m = re.search(rf"(?m)^(?:        )?{key}: (.*)$", step)
+            return m.group(1) if m else ""
+
+        names = [field(step, "name") for step in steps]
+        self.assertTrue({"drift", "protected", "secrets", "design-md", "fast-check", "full-test"} <= set(names))
+        self.assertEqual(names[1], "drift")
+        for step in steps[2:]:
+            self.assertIn("!cancelled()", field(step, "if"), step.splitlines()[0])
+        # Only design-md may fail without failing the job; it was never a required check.
+        self.assertEqual([n for n, step in zip(names, steps) if "continue-on-error" in step], ["design-md"])
+        self.assertEqual(field(steps[names.index("fast-check")], "shell"), "bash")
+        # The PR's code runs in this job, so its token can only read.
+        self.assertIn("\n    permissions:\n      contents: read\n    steps:\n", self.job("adlc.yml", "checks"))

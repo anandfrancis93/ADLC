@@ -5,10 +5,10 @@ visual identity for coding agents: design tokens in YAML front matter (colors, t
 rounded, spacing, components) and the reasons for them in Markdown sections.
 
 - A repo with a UI may keep `DESIGN.md` at its root. Repos without a UI do not need one.
-- Where it exists, the `design-md` job in `adlc.yml` runs
+- Where it exists, the `design-md` step of the `checks` job in `adlc.yml` runs
   `npx --yes @google/design.md@0.4.0 lint DESIGN.md`. The lint fails on errors (for example a
   token reference that does not resolve) and reports warnings such as text/background pairs
-  below WCAG AA contrast (4.5:1).
+  below WCAG AA contrast (4.5:1). A failed lint shows a warning and never blocks a merge.
 - The format is at version `alpha` and its authors expect changes, so the CLI version is pinned.
   Raise the pin in its own PR.
 - Changes to `DESIGN.md` can be compared with `npx @google/design.md@0.4.0 diff OLD NEW`.

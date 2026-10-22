@@ -5,7 +5,7 @@ description: Decide whether an ADLC pull request may merge, by tier, and watch t
 # ADLC Release
 
 1. Read the PR's `adlc:T*` label (set by CI).
-2. T1 and T2: merge when `full-test` passes and no Important finding is open.
+2. T1 and T2: merge when the `checks` check passes and no Important finding is open.
 3. T3: merge only after the owner approves, and `t3-approval` passes.
    The owner adds the `adlc:t3-approved` label, or approves the latest commit in a review.
    If the owner tells you to merge and you work from the owner's account, add the label yourself.

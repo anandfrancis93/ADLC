@@ -5,8 +5,8 @@ pinned to **v1.9.0**, the latest stable release (v2 is still a release candidate
 
 - Pre-commit: `betterleaks git . --pre-commit --staged --redact` scans only the staged diff.
   The hook fails if `betterleaks` is not installed.
-- CI: the `secrets` job scans only the PR's commits with `--log-opts="BASE..HEAD"`. There is no
-  official GitHub Action, so the job downloads the v1.9.0 release archive and checks it against the
+- CI: the `secrets` step of the `checks` job scans only the PR's commits with `--log-opts="BASE..HEAD"`. There is no
+  official GitHub Action, so the step downloads the v1.9.0 release archive and checks it against the
   release's `checksums.txt`.
 - Both exit 1 when they find a secret. `--redact` keeps the secret out of logs.
 - A found secret is compromised: revoke it first, then remove it from the commits.

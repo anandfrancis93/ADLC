@@ -9,9 +9,12 @@ from that release. Each new release opens a sync PR in every repo behind it.
   Each repo has short caller workflows that run them at a release tag, such as `@v0.4.0`.
 - `scripts/adlc.py sync` writes two kinds of files into a repo: managed and repo-owned.
 - `.adlc/version` records the release the repo is on.
-- The `drift` job fails a PR when a managed file differs from the pinned release.
+- The `drift` check fails a PR when a managed file differs from the pinned release.
   It compares SHA-256 hashes written into the shared `adlc.yml`, so a repo cannot edit them.
-- Review and label events run a separate caller, `adlc-review.yml`, with only `tier`, `t3-approval` and `review-budget`.
+- A PR runs three jobs: `t3-approval`, `checks` and `pr-title`. `checks` runs drift, protected, secrets,
+  design-md, fast-check and full-test as steps of one job. GitHub bills each job as at least one minute
+  ([GitHub docs](https://docs.github.com/en/billing/reference/actions-runner-pricing)).
+- Review and label events run a separate caller, `adlc-review.yml`, with only `t3-approval` and `review-budget`.
   A job skipped on those runs would report success under its check name, and hide a failure.
 - A release tag starts `.github/workflows/sync-repos.yml` in this repo.
   It opens a sync PR in each repo on an older release.

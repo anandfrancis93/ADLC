@@ -19,7 +19,7 @@ Repos get a copy at .adlc/scripts/adlc.py from `sync`. Edit it only in the ADLC 
   adlc.py sync TARGET [--releases] [--check]
                                           from an ADLC checkout at a release tag: write the ADLC's files
                                           into the repo at TARGET (see docs/sync.md)
-  adlc.py manifest [--write | --check]    in the ADLC repo: the hashes the drift job in adlc.yml compares
+  adlc.py manifest [--write | --check]    in the ADLC repo: the hashes the drift step in adlc.yml compares
   adlc.py sync-repos --owner OWNER [--skip OWNER/NAME] [--dry-run]
                                           from an ADLC checkout at a release tag: open a sync PR in each
                                           of OWNER's repos on an older release (needs GH_TOKEN)
@@ -376,7 +376,7 @@ def cmd_changelog_entry(args):
 
 
 # Files `sync` writes into a repo, as (path in the repo, source in the ADLC repo).
-# Managed files belong to the ADLC: every sync overwrites them, and the drift job in adlc.yml
+# Managed files belong to the ADLC: every sync overwrites them, and the drift step in adlc.yml
 # fails a PR whose copy differs from the pinned release. A source of None is the version record.
 MANAGED = (
     (".adlc/version", None),
@@ -436,7 +436,7 @@ def render(root, source, version):
 
 
 def manifest_lines(root, version):
-    """The shell lines between the markers in the drift job: version and `sha256 path [optional]` rows."""
+    """The shell lines between the markers in the drift step: version and `sha256 path [optional]` rows."""
     rows = [(p, s, "") for p, s in MANAGED] + [(p, s, " optional") for p, s in MANAGED_RELEASES]
     lines = [f"version={version}", "manifest='"]
     for path, source, flag in rows:

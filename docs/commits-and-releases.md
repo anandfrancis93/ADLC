@@ -26,6 +26,7 @@ the ADLC plugin, a package, a mobile app. A website that deploys from main has n
 
 - Use [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html): `MAJOR.MINOR.PATCH`.
   Breaking change: MAJOR. New feature: MINOR. Fix only: PATCH.
+  Before 1.0.0, a breaking change bumps MINOR instead (SemVer item 4: anything may change in 0.y.z).
 - Declare the public API in the README. For the ADLC, the public API is its rules, scripts,
   templates and skills, so a rule change that makes a compliant repo non-compliant is breaking.
 - Start at `0.1.0`. A released version is never changed; fix it in a new version.

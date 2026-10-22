@@ -43,7 +43,8 @@ Sources and what each contributed: [docs/sources.md](docs/sources.md).
 
 The ADLC follows [SemVer](https://semver.org/spec/v2.0.0.html). Its public API is the rules in
 `docs/`, the `scripts/adlc.py` commands, the files in `templates/`, and the skills. A change
-that makes a compliant repo non-compliant is a new major version. Changes are listed in
+that makes a compliant repo non-compliant is a new major version. Before 1.0.0 it is a new
+minor version instead, because SemVer lets anything change while the major version is 0. Changes are listed in
 [CHANGELOG.md](CHANGELOG.md) ([Common Changelog](https://common-changelog.org/) format).
 
 ## Claude Code plugin

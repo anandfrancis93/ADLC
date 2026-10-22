@@ -151,6 +151,11 @@ class ChangelogDraft(unittest.TestCase):
         self.assertTrue(changed[0].startswith("- **Breaking:** new map format"))
         self.assertTrue(changed[1].startswith("- Faster tiering"))
 
+    def test_breaking_before_1_0_bumps_minor(self):
+        out = self.draft([("a1", "feat!: new map format", "")], current="0.3.1")[1]
+        self.assertTrue(out.startswith("## [0.4.0]"))
+        self.assertIn("- **Breaking:** new map format", out)
+
     def test_fix_only_bumps_patch(self):
         self.assertTrue(self.draft([("a1", "fix: x", "")], current="v1.2.3")[1].startswith("## [1.2.4]"))
 

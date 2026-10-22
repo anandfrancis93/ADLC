@@ -204,6 +204,8 @@ def cmd_changelog_draft(args):
     if not bump:
         print("No user-facing changes since the last release; no new version.", file=sys.stderr)
         return 3
+    if major == 0 and bump == 3:
+        bump = 2  # SemVer item 4: in 0.y.z anything may change, so breaking bumps MINOR.
     version = {3: f"{major + 1}.0.0", 2: f"{major}.{minor + 1}.0", 1: f"{major}.{minor}.{patch + 1}"}[bump]
     date = args.date or datetime.date.today().isoformat()
     out = [f"## [{version}] - {date}", ""]

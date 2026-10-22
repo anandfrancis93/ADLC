@@ -36,13 +36,10 @@ To change a managed file for every repo, change it in this repo and release a ne
 
 ## One-time setup in the ADLC repo
 
-This repo is private. Let the owner's other private repos call its workflows:
-Settings > Actions > General > Access > "Accessible from repositories owned by 'anandfrancis93' user" > Save
-([GitHub docs](https://docs.github.com/actions/creating-actions/sharing-actions-and-workflows-from-your-private-repository)).
-
-A public repo can call only public workflows
+This repo is public, so any repo can call its workflows, public or private
 ([GitHub docs](https://docs.github.com/en/actions/reference/workflows-and-actions/reusing-workflow-configurations)).
-A public repo can use the ADLC's shared CI only after this repo is made public.
+Public repos use standard GitHub-hosted runners for free
+([GitHub docs](https://docs.github.com/en/billing/concepts/product-billing/github-actions)).
 
 The sync PRs need a token. The built-in workflow token works only in the repo that runs the workflow
 ([GitHub docs](https://docs.github.com/en/actions/concepts/security/github_token)). Create a fine-grained token once:
@@ -133,12 +130,8 @@ A sync PR changes CI files, so it is T3. Before merging, do what each **Breaking
 It then needs the owner's approval like any T3 PR ([T3 approval](risk-tiers.md#t3-approval)).
 
 Dependabot does not bump the ADLC tag in callers. The template's `.github/dependabot.yml` ignores
-`anandfrancis93/ADLC*`, for two reasons:
-
-- A bump changes only the tag. `drift` fails until someone also runs sync.
-  A Dependabot PR with commits from anyone else also loses its tier.
-- Dependabot needs a token to read a private repo. GitHub's documented way is a `git` registry
-  with a personal access token, stored as a Dependabot secret in each repo.
+`anandfrancis93/ADLC*`. A bump changes only the tag, so `drift` fails until someone also runs sync.
+A Dependabot PR with commits from anyone else also loses its tier.
 
 ## Changing the ADLC itself
 

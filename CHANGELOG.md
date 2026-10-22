@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.4.0] - 2026-10-22
+
+_To upgrade a repo, sync it from v0.4.0 as `docs/sync.md` describes._
+
+### Changed
+
+- **Breaking:** run the ADLC's CI as shared workflows that each repo calls at a release tag, so the required check names change after the first sync ([`757b855`](https://github.com/anandfrancis93/ADLC/commit/757b855)) ([#12](https://github.com/anandfrancis93/ADLC/pull/12))
+- **Breaking:** add a required `drift` check that fails a PR when a file the ADLC manages differs from the pinned release ([`757b855`](https://github.com/anandfrancis93/ADLC/commit/757b855)) ([#12](https://github.com/anandfrancis93/ADLC/pull/12))
+- **Breaking:** run review events in their own caller, `adlc-review.yml`, so a job skipped on a review no longer turns a failed required check green ([`757b855`](https://github.com/anandfrancis93/ADLC/commit/757b855)) ([#12](https://github.com/anandfrancis93/ADLC/pull/12))
+- **Breaking:** ignore the ADLC's own workflows in Dependabot; ADLC releases reach repos as sync PRs ([`757b855`](https://github.com/anandfrancis93/ADLC/commit/757b855)) ([#12](https://github.com/anandfrancis93/ADLC/pull/12))
+
+### Added
+
+- Add `adlc.py sync`, which writes the ADLC's files into a repo from a release tag and records the version in `.adlc/version` ([`757b855`](https://github.com/anandfrancis93/ADLC/commit/757b855)) ([#12](https://github.com/anandfrancis93/ADLC/pull/12))
+- Add `docs/sync.md`: adopt and update repos, start new ones, and check for repos behind each release ([`757b855`](https://github.com/anandfrancis93/ADLC/commit/757b855)) ([#12](https://github.com/anandfrancis93/ADLC/pull/12))
+
 ## [0.3.0] - 2026-10-22
 
 ### Changed
@@ -51,6 +67,7 @@
 
 _First release._
 
+[0.4.0]: https://github.com/anandfrancis93/ADLC/releases/tag/v0.4.0
 [0.3.0]: https://github.com/anandfrancis93/ADLC/releases/tag/v0.3.0
 [0.2.0]: https://github.com/anandfrancis93/ADLC/releases/tag/v0.2.0
 [0.1.0]: https://github.com/anandfrancis93/ADLC/releases/tag/v0.1.0

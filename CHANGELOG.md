@@ -1,5 +1,40 @@
 # Changelog
 
+## [0.3.0] - 2026-10-22
+
+### Changed
+
+- **Breaking:** scan staged changes for secrets with Betterleaks v1.9.0 in the pre-commit hook, which fails when Betterleaks is not installed ([`61eb03d`](https://github.com/anandfrancis93/ADLC/commit/61eb03d)) ([#5](https://github.com/anandfrancis93/ADLC/pull/5))
+- **Breaking:** run `.adlc/install` before the CI `fast-check` and `full-test` jobs, so each repo needs that file from the template ([`61eb03d`](https://github.com/anandfrancis93/ADLC/commit/61eb03d)) ([#5](https://github.com/anandfrancis93/ADLC/pull/5))
+- **Breaking:** format staged files in the pre-commit `fast-check` and stage the result; a staged file that also has unstaged edits stops the commit ([`61eb03d`](https://github.com/anandfrancis93/ADLC/commit/61eb03d)) ([#5](https://github.com/anandfrancis93/ADLC/pull/5))
+- **Breaking:** require one auto-fixing formatter per language, pinned to an exact version and checked in CI ([`61eb03d`](https://github.com/anandfrancis93/ADLC/commit/61eb03d)) ([#5](https://github.com/anandfrancis93/ADLC/pull/5))
+- **Breaking:** require a committed version file per language (`.nvmrc`, `.python-version`) and installs exactly from the lockfile ([`61eb03d`](https://github.com/anandfrancis93/ADLC/commit/61eb03d)) ([#5](https://github.com/anandfrancis93/ADLC/pull/5))
+- **Breaking:** require `.github/dependabot.yml` from the template, with weekly grouped updates tiered T1 for patch and minor and T2 for major ([`61eb03d`](https://github.com/anandfrancis93/ADLC/commit/61eb03d)) ([#5](https://github.com/anandfrancis93/ADLC/pull/5))
+- **Breaking:** keep each T3 intent and spec, with a Decision section, in one file at `docs/specs/YYYY-MM-DD-<slug>.md` after merge ([`61eb03d`](https://github.com/anandfrancis93/ADLC/commit/61eb03d)) ([#5](https://github.com/anandfrancis93/ADLC/pull/5))
+- **Breaking:** add `fast-check`, `secrets` and `protected` to the required checks ([`61eb03d`](https://github.com/anandfrancis93/ADLC/commit/61eb03d), [`d82d462`](https://github.com/anandfrancis93/ADLC/commit/d82d462)) ([#5](https://github.com/anandfrancis93/ADLC/pull/5), [#8](https://github.com/anandfrancis93/ADLC/pull/8))
+- **Breaking:** label every feature flag a ramp or a kill switch, and remove each ramp flag once its rollout reaches 100% ([`526a90e`](https://github.com/anandfrancis93/ADLC/commit/526a90e)) ([#9](https://github.com/anandfrancis93/ADLC/pull/9))
+- **Breaking:** give scheduled agents read-only tokens where they only read, let an agent that reads outside content only comment, and make a scheduled check that cannot run report a failure ([`526a90e`](https://github.com/anandfrancis93/ADLC/commit/526a90e)) ([#9](https://github.com/anandfrancis93/ADLC/pull/9))
+- Protect a T3 failing test in the same commit that adds it, and remove a protected line only in the PR's last commit, which changes nothing else ([`d82d462`](https://github.com/anandfrancis93/ADLC/commit/d82d462)) ([#8](https://github.com/anandfrancis93/ADLC/pull/8))
+- Run the agent review in a fresh session, and have each Important finding say how to show it fails ([`526a90e`](https://github.com/anandfrancis93/ADLC/commit/526a90e)) ([#9](https://github.com/anandfrancis93/ADLC/pull/9))
+- Require a done-when line in every intent: the test, command or check that proves the work is done ([`526a90e`](https://github.com/anandfrancis93/ADLC/commit/526a90e)) ([#9](https://github.com/anandfrancis93/ADLC/pull/9))
+- Count a check that did not start, or only checked syntax, as not run, and name each check not run in the PR ([`526a90e`](https://github.com/anandfrancis93/ADLC/commit/526a90e)) ([#9](https://github.com/anandfrancis93/ADLC/pull/9))
+- Replace the Architecture section of the AGENTS.md template with gotchas the file tree does not show ([`526a90e`](https://github.com/anandfrancis93/ADLC/commit/526a90e)) ([#9](https://github.com/anandfrancis93/ADLC/pull/9))
+
+### Added
+
+- Add a CI `protected` job that enforces `.adlc/protected` on each commit of the PR branch, counting a merge as one commit ([`d82d462`](https://github.com/anandfrancis93/ADLC/commit/d82d462)) ([#8](https://github.com/anandfrancis93/ADLC/pull/8))
+- Add a CI `secrets` job that scans the PR's commits with Betterleaks ([`61eb03d`](https://github.com/anandfrancis93/ADLC/commit/61eb03d)) ([#5](https://github.com/anandfrancis93/ADLC/pull/5))
+- Add the `adlc-writing` skill for plain prose, and an optional Mermaid diagram in T3 specs ([`d773735`](https://github.com/anandfrancis93/ADLC/commit/d773735)) ([#7](https://github.com/anandfrancis93/ADLC/pull/7))
+- Add skills and model changes to Retire: a skill is valued by use, and a model change triggers an audit of old workarounds ([`526a90e`](https://github.com/anandfrancis93/ADLC/commit/526a90e)) ([#9](https://github.com/anandfrancis93/ADLC/pull/9))
+- Add a flaky-test proof by repeated runs on the base and the branch ([`526a90e`](https://github.com/anandfrancis93/ADLC/commit/526a90e)) ([#9](https://github.com/anandfrancis93/ADLC/pull/9))
+- Add a Screenshots section to the PR template for user-visible changes ([`526a90e`](https://github.com/anandfrancis93/ADLC/commit/526a90e)) ([#9](https://github.com/anandfrancis93/ADLC/pull/9))
+- Add a deploy watch to `adlc-release`: after a merge, watch the deploy run on main and tell the owner at once if it fails ([`648b0eb`](https://github.com/anandfrancis93/ADLC/commit/648b0eb)) ([#11](https://github.com/anandfrancis93/ADLC/pull/11))
+- Post the agent review's summary on the PR as one review comment, so CI counts the round ([`648b0eb`](https://github.com/anandfrancis93/ADLC/commit/648b0eb)) ([#11](https://github.com/anandfrancis93/ADLC/pull/11))
+
+### Fixed
+
+- Compute the `tier` job's files with a three-dot diff, so changes on main since the branch point no longer raise the tier ([`61eb03d`](https://github.com/anandfrancis93/ADLC/commit/61eb03d)) ([#5](https://github.com/anandfrancis93/ADLC/pull/5))
+
 ## [0.2.0] - 2026-10-22
 
 ### Changed
@@ -16,5 +51,6 @@
 
 _First release._
 
+[0.3.0]: https://github.com/anandfrancis93/ADLC/releases/tag/v0.3.0
 [0.2.0]: https://github.com/anandfrancis93/ADLC/releases/tag/v0.2.0
 [0.1.0]: https://github.com/anandfrancis93/ADLC/releases/tag/v0.1.0

@@ -1,7 +1,7 @@
 # ADLC checks. Copy to .github/workflows/adlc.yml.
 # Repo variables: ADLC_OWNER (GitHub login that approves T3), ADLC_REVIEWERS
 # (comma-separated logins of agent reviewers, e.g. "claude[bot]").
-# Make "fast-check", "secrets", "full-test" and "t3-approval" required checks in branch protection.
+# Make "fast-check", "secrets", "protected", "full-test" and "t3-approval" required checks in branch protection.
 # Dependabot PRs get their tier from adlc-dependabot.yml instead (their pull_request token is read-only).
 name: ADLC
 
@@ -89,6 +89,20 @@ jobs:
           BASE: ${{ github.event.pull_request.base.sha }}
           HEAD: ${{ github.event.pull_request.head.sha }}
         run: betterleaks git . --log-opts="$BASE..$HEAD" --redact --no-banner
+
+  # Paths in .adlc/protected may not change. Each commit is checked against the list in its parent,
+  # so a failing test protected by an earlier commit of this PR is covered. Works with any AI tool.
+  protected:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: python3 .adlc/scripts/adlc.py protected-changes --base "$BASE" --head "$HEAD"
 
   # The only place the full suite runs. Not re-run on review events.
   full-test:

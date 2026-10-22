@@ -63,4 +63,5 @@ This repo is also a Claude Code plugin marketplace:
 ```
 
 The plugin adds the skills, a reviewer subagent that follows the review budget,
-and a hook that blocks edits to paths listed in `.adlc/protected`.
+and a hook that blocks edits to paths listed in `.adlc/protected` as they happen.
+CI enforces the same list for every tool.

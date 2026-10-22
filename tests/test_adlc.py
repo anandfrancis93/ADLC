@@ -90,6 +90,138 @@ class Protected(unittest.TestCase):
         self.assertEqual(run(["check-protected"], stdin=json.dumps({"tool_input": {}}), cwd=self.d)[0], 0)
 
 
+class ProtectedChanges(unittest.TestCase):
+    LIST = ".adlc/protected"
+
+    def setUp(self):
+        self.d = tempfile.mkdtemp()
+        self.git("init", "-q", "-b", "main")
+        self.base = self.commit({"src/app.py": "x = 1\n", "tests/regression/bug1.py": "assert x\n",
+                                 self.LIST: "tests/regression/bug1.py\n"})
+
+    def git(self, *args):
+        p = subprocess.run(
+            ["git", "-c", "user.name=t", "-c", "user.email=t@example.com", "-c", "commit.gpgsign=false", *args],
+            cwd=self.d, capture_output=True, text=True, check=True,
+        )
+        return p.stdout.strip()
+
+    def commit(self, files):
+        for path, text in files.items():
+            full = os.path.join(self.d, path)
+            os.makedirs(os.path.dirname(full), exist_ok=True)
+            with open(full, "w") as f:
+                f.write(text)
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", "change")
+        return self.git("rev-parse", "HEAD")
+
+    def check(self):
+        return run(["protected-changes", "--base", self.base, "--head", "HEAD"], cwd=self.d)
+
+    def test_other_changes_pass(self):
+        self.commit({"src/app.py": "x = 2\n"})
+        self.assertEqual(self.check()[0], 0)
+
+    def test_editing_a_path_protected_on_the_base_fails(self):
+        self.commit({"tests/regression/bug1.py": "pass\n"})
+        code, _, err = self.check()
+        self.assertEqual(code, 1)
+        self.assertIn("tests/regression/bug1.py", err)
+
+    def test_failing_test_then_fix_passes(self):
+        self.commit({"tests/regression/bug2.py": "assert fixed\n",
+                     self.LIST: "tests/regression/bug1.py\ntests/regression/bug2.py\n"})
+        self.commit({"src/app.py": "fixed = True\n"})
+        self.assertEqual(self.check()[0], 0)
+
+    def test_test_protected_earlier_in_the_pr_is_covered(self):
+        self.commit({"tests/regression/bug2.py": "assert fixed\n",
+                     self.LIST: "tests/regression/bug1.py\ntests/regression/bug2.py\n"})
+        self.commit({"src/app.py": "fixed = True\n", "tests/regression/bug2.py": "pass\n"})
+        code, _, err = self.check()
+        self.assertEqual(code, 1)
+        self.assertIn("bug2.py", err)
+
+    def test_removing_a_line_alone_passes(self):
+        self.commit({self.LIST: ""})
+        self.assertEqual(self.check()[0], 0)
+
+    def test_unprotecting_as_the_last_commit_passes(self):
+        self.commit({"tests/regression/bug2.py": "assert fixed\n",
+                     self.LIST: "tests/regression/bug1.py\ntests/regression/bug2.py\n"})
+        self.commit({"src/app.py": "fixed = True\n"})
+        self.commit({self.LIST: "tests/regression/bug1.py\n"})
+        self.assertEqual(self.check()[0], 0)
+
+    def test_changes_after_removing_a_line_fail(self):
+        self.commit({self.LIST: ""})
+        self.commit({"tests/regression/bug1.py": "pass\n"})
+        code, _, err = self.check()
+        self.assertEqual(code, 1)
+        self.assertIn("after", err)
+
+    def test_removing_a_line_with_other_changes_in_one_commit_fails(self):
+        self.commit({self.LIST: "", "src/app.py": "x = 2\n"})
+        code, _, err = self.check()
+        self.assertEqual(code, 1)
+        self.assertIn("src/app.py", err)
+
+    def test_hand_edit_in_a_merge_of_the_base_fails(self):
+        self.git("checkout", "-q", "-b", "pr")
+        self.commit({"src/app.py": "x = 2\n"})
+        self.git("checkout", "-q", "main")
+        self.base = self.commit({"src/other.py": "y = 1\n"})
+        self.git("checkout", "-q", "pr")
+        self.git("merge", "-q", "--no-ff", "--no-commit", "main")
+        self.commit({"tests/regression/bug1.py": "pass\n"})
+        code, _, err = self.check()
+        self.assertEqual(code, 1)
+        self.assertIn("bug1.py", err)
+
+    def test_merging_the_base_passes_even_when_the_base_unprotected_a_test(self):
+        self.git("checkout", "-q", "-b", "pr")
+        self.commit({"src/app.py": "x = 2\n"})
+        self.git("checkout", "-q", "main")
+        self.commit({self.LIST: ""})
+        self.base = self.commit({"tests/regression/bug1.py": "pass\n"})
+        self.git("checkout", "-q", "pr")
+        self.git("merge", "-q", "--no-edit", "main")
+        self.commit({"src/app.py": "x = 3\n"})
+        self.assertEqual(self.check()[0], 0)
+
+    def test_merge_of_another_branch_is_checked_as_one_commit(self):
+        self.base = self.commit({"tests/regression/bug3.py": "a\nb\nc\n"})
+        self.git("checkout", "-q", "-b", "side")
+        self.commit({"tests/regression/bug3.py": "a\nb\nweakened\n"})
+        self.git("checkout", "-q", "-b", "pr", self.base)
+        self.commit({"tests/regression/bug3.py": "tightened\nb\nc\n",
+                     self.LIST: "tests/regression/bug1.py\ntests/regression/bug3.py\n"})
+        self.git("merge", "-q", "--no-edit", "side")
+        code, _, err = self.check()
+        self.assertEqual(code, 1)
+        self.assertIn("bug3.py", err)
+
+    def test_changes_after_a_merge_that_removes_lines_fail(self):
+        self.git("checkout", "-q", "-b", "pr")
+        self.git("checkout", "-q", "main")
+        self.base = self.commit({"src/other.py": "y = 1\n"})
+        self.git("checkout", "-q", "pr")
+        self.git("merge", "-q", "--no-ff", "--no-commit", "main")
+        self.commit({self.LIST: ""})
+        self.commit({"tests/regression/bug1.py": "pass\n"})
+        code, _, err = self.check()
+        self.assertEqual(code, 1)
+        self.assertIn("after", err)
+
+    def test_no_list_passes(self):
+        self.git("rm", "-q", self.LIST)
+        self.git("commit", "-q", "-m", "drop list")
+        self.base = self.git("rev-parse", "HEAD")
+        self.commit({"tests/regression/bug1.py": "pass\n"})
+        self.assertEqual(self.check()[0], 0)
+
+
 class ReviewRounds(unittest.TestCase):
     def test_counts_only_listed_reviewers_and_real_states(self):
         reviews = [

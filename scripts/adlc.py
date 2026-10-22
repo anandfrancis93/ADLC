@@ -3,6 +3,8 @@
 
   adlc.py tier [--map FILE] [PATH ...]    print T1, T2 or T3 for the paths (stdin if none)
   adlc.py check-protected [--list FILE]   Claude Code PreToolUse hook: block edits to protected paths
+  adlc.py protected-changes --base SHA --head SHA [--list FILE]
+                                          CI: fail if a PR commit edits a path its parent commit protects
   adlc.py review-rounds --reviewers A,B   count review rounds in `gh api .../reviews` JSON on stdin
   adlc.py pr-title TITLE                  check a PR title against Conventional Commits 1.0.0
   adlc.py changelog-draft --current X.Y.Z --repo OWNER/NAME
@@ -16,6 +18,7 @@ import datetime
 import json
 import os
 import re
+import subprocess
 import sys
 
 TIERS = ("T1", "T2", "T3")
@@ -45,26 +48,31 @@ def glob_to_regex(pattern):
     return re.compile("^" + "".join(out) + "$")
 
 
+def parse_rules(lines, source):
+    """Return [(tier_or_None, regex)] from the lines of a rules file."""
+    rules = []
+    for n, raw in enumerate(lines, 1):
+        line = raw.split("#", 1)[0].strip()
+        if not line:
+            continue
+        parts = line.split()
+        if parts[0] in TIERS:
+            if len(parts) != 2:
+                sys.exit(f"{source}:{n}: expected '<tier> <glob>', got: {raw.strip()}")
+            rules.append((parts[0], glob_to_regex(parts[1])))
+        elif len(parts) == 1:
+            rules.append((None, glob_to_regex(parts[0])))
+        else:
+            sys.exit(f"{source}:{n}: unknown tier {parts[0]!r}")
+    return rules
+
+
 def read_rules(path):
     """Return [(tier_or_None, regex)] from a rules file; a missing file means no rules."""
-    rules = []
     if not os.path.exists(path):
-        return rules
+        return []
     with open(path, encoding="utf-8") as f:
-        for n, raw in enumerate(f, 1):
-            line = raw.split("#", 1)[0].strip()
-            if not line:
-                continue
-            parts = line.split()
-            if parts[0] in TIERS:
-                if len(parts) != 2:
-                    sys.exit(f"{path}:{n}: expected '<tier> <glob>', got: {raw.strip()}")
-                rules.append((parts[0], glob_to_regex(parts[1])))
-            elif len(parts) == 1:
-                rules.append((None, glob_to_regex(parts[0])))
-            else:
-                sys.exit(f"{path}:{n}: unknown tier {parts[0]!r}")
-    return rules
+        return parse_rules(f, path)
 
 
 def normalize(path):
@@ -114,10 +122,72 @@ def cmd_check_protected(args):
         if rx.match(rel):
             print(
                 f"ADLC: {rel} is protected (listed in {args.list}). "
-                "Ask the owner, or change the list in a separate PR.",
+                "Ask the owner if the list is wrong.",
                 file=sys.stderr,
             )
             return 2
+    return 0
+
+
+def git(*args):
+    p = subprocess.run(["git", *args], capture_output=True, text=True)
+    if p.returncode != 0:
+        sys.exit(f"adlc.py: git {' '.join(args)} failed: {p.stderr.strip()}")
+    return p.stdout
+
+
+def protected_at(commit, path):
+    """The protected list as it was at a commit: (set of its lines, rules). Empty if the file was absent."""
+    p = subprocess.run(["git", "show", f"{commit}:{path}"], capture_output=True, text=True)
+    lines = p.stdout.splitlines() if p.returncode == 0 else []
+    entries = {line.split("#", 1)[0].strip() for line in lines} - {""}
+    return entries, parse_rules(lines, f"{commit}:{path}")
+
+
+EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+
+
+def is_ancestor(a, b):
+    return subprocess.run(["git", "merge-base", "--is-ancestor", a, b], capture_output=True).returncode == 0
+
+
+def cmd_protected_changes(args):
+    """Check each PR commit against the list in its first parent, so a failing test protected by an
+    earlier commit of the same PR is covered. Once a commit removes a line, it and every later commit
+    may change only the list, so a PR cannot unprotect a test and then edit it.
+    A merge counts as one commit. A merge of the base branch counts only its hand edits, and lines
+    the base removed, because the base was checked on its own.
+    Limit: a branch squashed or force-pushed before CI hides the commit order."""
+    commits = git("rev-list", "--reverse", "--first-parent", f"{args.base}..{args.head}").split()
+    problems, removed_in = [], None
+    for c in commits:
+        first, *others = git("rev-list", "--parents", "-n", "1", c).split()[1:] or [EMPTY_TREE]
+        before, rules = protected_at(first, args.list)
+        after, _ = protected_at(c, args.list)
+        if others and all(is_ancestor(p, args.base) for p in others):
+            diff = git("diff-tree", "-c", "-r", "--no-commit-id", "--name-only", "-z", c)
+            for p in others:
+                mb = git("merge-base", first, p).strip()
+                before -= protected_at(mb, args.list)[0] - protected_at(p, args.list)[0]
+        else:
+            diff = git("diff-tree", "--no-commit-id", "--name-only", "-r", "-z", first, c)
+        files = [f for f in diff.split("\0") if f]
+        for f in files:
+            if any(rx.match(f) for _, rx in rules):
+                problems.append(f"{c[:7]} edits {f}, which {args.list} lists.")
+        if before - after and not removed_in:
+            removed_in = c[:7]
+        others = [f for f in files if f != args.list]
+        if removed_in and others:
+            problems.append(
+                f"{c[:7]} changes {', '.join(others)} after {removed_in} removed lines from {args.list}. "
+                "Remove lines only at the end of a PR, in commits that change nothing else."
+            )
+    for problem in problems:
+        print(f"ADLC: {problem}", file=sys.stderr)
+    if problems:
+        print("ADLC: a fix must not change its failing test. Ask the owner if the list is wrong.", file=sys.stderr)
+        return 1
     return 0
 
 
@@ -250,6 +320,10 @@ def main():
     t.add_argument("paths", nargs="*")
     c = sub.add_parser("check-protected")
     c.add_argument("--list", default=".adlc/protected")
+    pc = sub.add_parser("protected-changes")
+    pc.add_argument("--base", required=True)
+    pc.add_argument("--head", required=True)
+    pc.add_argument("--list", default=".adlc/protected")
     r = sub.add_parser("review-rounds")
     r.add_argument("--reviewers", required=True)
     pt = sub.add_parser("pr-title")
@@ -265,6 +339,7 @@ def main():
     return {
         "tier": cmd_tier,
         "check-protected": cmd_check_protected,
+        "protected-changes": cmd_protected_changes,
         "review-rounds": cmd_review_rounds,
         "pr-title": cmd_pr_title,
         "changelog-draft": cmd_changelog_draft,

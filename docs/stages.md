@@ -26,7 +26,8 @@ and the tier decides how much of stages 2 to 6 a change goes through
 
 ## 4 Verify
 - CI runs the fast check and secret scan on the PR's changes, and the full test suite once per change.
-- T3: commit a failing test before the fix; the fix must not edit that test.
+- T3: commit a failing test before the fix; the fix must not edit that test. List the test in
+  `.adlc/protected` in the same commit; CI fails any later commit that edits it.
 - T3: re-run only the proof records whose input hash changed. Full re-proof runs on a schedule.
 
 ## 5 Review

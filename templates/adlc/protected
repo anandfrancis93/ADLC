@@ -1,3 +1,5 @@
-# Paths an agent may not edit (Claude Code plugin hook). One glob per line.
-# Empty by default. For a T3 bug fix, list the committed failing test here
-# until the fix merges, so the fix cannot weaken the test.
+# Paths a change may not edit. One glob per line. Empty by default.
+# CI enforces it for every PR (the "protected" job in adlc.yml); the Claude Code plugin hook
+# also stops agent edits as they happen.
+# T3 bug fix: commit the failing test and its line here together, then fix in later commits.
+# To remove a line, make it the PR's last commit and change nothing else in it.

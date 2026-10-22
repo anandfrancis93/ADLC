@@ -22,4 +22,5 @@ T3 specs stay in the repo after merging, as the record of why the change was mad
 an old spec to describe a later change; write a new spec that links to it.
 
 For T3 bug fixes, the first test reproduces the bug and must fail before the fix.
-Add its path to `.adlc/protected` so the fix cannot edit it.
+Add its path to `.adlc/protected` in the same commit as the test, so the fix cannot edit it.
+CI checks every later commit against that list.

@@ -2,6 +2,7 @@
 
 This repo follows the ADLC: https://github.com/anandfrancis93/ADLC
 Keep this file under 60 lines. Facts only; process lives in the ADLC skills, hooks and CI.
+Write all prose for people (PRs, commits, reviews, docs, replies) by the `adlc-writing` skill.
 
 ## Commands
 - Install (exact, from the lockfile): see `.adlc/install`

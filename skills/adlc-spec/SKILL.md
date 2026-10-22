@@ -11,7 +11,8 @@ Write only:
 1. **Tests to add**: one line each, as the test name and what it asserts.
 2. **Files in scope**: the paths the change may touch.
 3. **Out of scope**: what this change will not do.
-4. **Decision** (T3 only): the choice made, the alternatives considered, and why this one.
+4. **Diagram** (T3, optional): a Mermaid diagram when the flow is hard to follow in words.
+5. **Decision** (T3 only): the choice made, the alternatives considered, and why this one.
    A few lines. This replaces separate architecture decision records.
 
 Do not write expected results, counts or proof in prose. The tests and CI produce

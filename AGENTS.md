@@ -17,5 +17,6 @@ This repo defines a lifecycle; it has no application code.
 ## Rules
 - Keep this file and `templates/AGENTS.md` under 60 lines.
 - Process rules go in a skill, a script or CI, not in prose here.
+- Write prose for people by `skills/adlc-writing/SKILL.md`.
 - PR titles are Conventional Commits; PRs are squash-merged.
 - Do not edit `CHANGELOG.md` in feature PRs. Releases use the `adlc-version` skill.

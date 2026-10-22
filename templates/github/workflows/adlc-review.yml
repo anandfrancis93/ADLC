@@ -1,0 +1,22 @@
+# ADLC checks on reviews. The ADLC manages this file: `adlc.py sync` writes it, and the drift check fails if it changes.
+# Re-checks t3-approval after a review and counts agent review rounds. Keep the job id "adlc",
+# so t3-approval reports under the same check name as in adlc.yml.
+# Repo variables: ADLC_OWNER (GitHub login that approves T3), ADLC_REVIEWERS
+# (comma-separated logins of agent reviewers, e.g. "claude[bot]").
+name: ADLC review
+
+on:
+  pull_request_review:
+    types: [submitted, dismissed]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  adlc:
+    uses: anandfrancis93/ADLC/.github/workflows/adlc-review.yml@v{{ADLC_VERSION}}
+    with:
+      owner: ${{ vars.ADLC_OWNER }}
+      reviewers: ${{ vars.ADLC_REVIEWERS }}

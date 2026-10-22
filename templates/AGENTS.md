@@ -2,6 +2,7 @@
 
 This repo follows the ADLC: https://github.com/anandfrancis93/ADLC
 Keep this file under 60 lines. Facts only; process lives in the ADLC skills, hooks and CI.
+Never edit the files the ADLC manages (`docs/sync.md` there lists them). CI fails if they change.
 Write all prose for people (PRs, commits, reviews, docs, replies) by the `adlc-writing` skill.
 
 ## Commands

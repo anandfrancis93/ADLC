@@ -1,15 +1,12 @@
-# ADLC checks. Copy to .github/workflows/adlc.yml.
-# Repo variables: ADLC_OWNER (GitHub login that approves T3), ADLC_REVIEWERS
-# (comma-separated logins of agent reviewers, e.g. "claude[bot]").
-# Make "fast-check", "secrets", "protected", "full-test" and "t3-approval" required checks in branch protection.
-# Dependabot PRs get their tier from adlc-dependabot.yml instead (their pull_request token is read-only).
+# ADLC checks. The ADLC manages this file: `adlc.py sync` writes it, and the drift check fails if it changes.
+# The jobs live in the ADLC repo, at the release tag below. See docs/sync.md in the ADLC repo.
+# Repo variable: ADLC_OWNER (GitHub login that approves T3). Review events run adlc-review.yml.
+# Required checks: drift, fast-check, secrets, protected, full-test and t3-approval, named as a PR lists them.
 name: ADLC
 
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
-  pull_request_review:
-    types: [submitted, dismissed]
 
 permissions:
   contents: read
@@ -17,154 +14,7 @@ permissions:
   issues: write
 
 jobs:
-  tier:
-    if: github.event.pull_request.user.login != 'dependabot[bot]'
-    runs-on: ubuntu-latest
-    outputs:
-      tier: ${{ steps.tier.outputs.tier }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - id: tier
-        env:
-          BASE: ${{ github.event.pull_request.base.sha }}
-          HEAD: ${{ github.event.pull_request.head.sha }}
-        run: |
-          tier=$(git diff --name-only "$BASE...$HEAD" | python3 .adlc/scripts/adlc.py tier --explain)
-          echo "tier=$tier" >> "$GITHUB_OUTPUT"
-          echo "Tier: $tier" >> "$GITHUB_STEP_SUMMARY"
-      - name: Label the PR with its tier
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PR: ${{ github.event.pull_request.number }}
-          TIER: ${{ steps.tier.outputs.tier }}
-        run: |
-          for t in T1 T2 T3; do gh label create "adlc:$t" --force >/dev/null; done
-          gh pr edit "$PR" --remove-label adlc:T1,adlc:T2,adlc:T3 --add-label "adlc:$TIER"
-
-  # Formatter check and lint on the PR's changed files. Same script as pre-commit, without writing.
-  fast-check:
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - if: hashFiles('.nvmrc') != ''
-        uses: actions/setup-node@v7
-        with:
-          node-version-file: .nvmrc
-      - if: hashFiles('.python-version') != ''
-        uses: actions/setup-python@v7
-        with:
-          python-version-file: .python-version
-      - run: .adlc/install
-      - env:
-          BASE: ${{ github.event.pull_request.base.sha }}
-          HEAD: ${{ github.event.pull_request.head.sha }}
-          ADLC_CHECK_ONLY: "1"
-        run: git diff --name-only -z --diff-filter=ACMR "$BASE...$HEAD" | xargs -0 -r .adlc/fast-check
-
-  # Secret scan of the PR's commits only. Pinned version, checksum verified.
-  secrets:
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: Install Betterleaks
-        env:
-          V: "1.9.0"
-        run: |
-          cd "$RUNNER_TEMP"
-          base="https://github.com/betterleaks/betterleaks/releases/download/v$V"
-          curl -sSfLO "$base/betterleaks_${V}_linux_x64.tar.gz"
-          curl -sSfLO "$base/checksums.txt"
-          grep " betterleaks_${V}_linux_x64.tar.gz\$" checksums.txt | sha256sum -c -
-          mkdir bl && tar -xzf "betterleaks_${V}_linux_x64.tar.gz" -C bl
-          echo "$RUNNER_TEMP/bl" >> "$GITHUB_PATH"
-      - env:
-          BASE: ${{ github.event.pull_request.base.sha }}
-          HEAD: ${{ github.event.pull_request.head.sha }}
-        run: betterleaks git . --log-opts="$BASE..$HEAD" --redact --no-banner
-
-  # Paths in .adlc/protected may not change. Each commit is checked against the list in its parent,
-  # so a failing test protected by an earlier commit of this PR is covered. Works with any AI tool.
-  protected:
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - env:
-          BASE: ${{ github.event.pull_request.base.sha }}
-          HEAD: ${{ github.event.pull_request.head.sha }}
-        run: python3 .adlc/scripts/adlc.py protected-changes --base "$BASE" --head "$HEAD"
-
-  # The only place the full suite runs. Not re-run on review events.
-  full-test:
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - if: hashFiles('.nvmrc') != ''
-        uses: actions/setup-node@v7
-        with:
-          node-version-file: .nvmrc
-      - if: hashFiles('.python-version') != ''
-        uses: actions/setup-python@v7
-        with:
-          python-version-file: .python-version
-      - run: .adlc/install
-      - run: .adlc/full-test
-
-  # Only for repos with a DESIGN.md at the root. The format is alpha, so the CLI version is pinned.
-  design-md:
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - run: |
-          if [ ! -f DESIGN.md ]; then echo "No DESIGN.md; skipping."; exit 0; fi
-          npx --yes @google/design.md@0.4.0 lint DESIGN.md
-
-  review-budget:
-    if: github.event_name == 'pull_request_review' && vars.ADLC_REVIEWERS != ''
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - env:
-          GH_TOKEN: ${{ github.token }}
-          PR: ${{ github.event.pull_request.number }}
-          REVIEWERS: ${{ vars.ADLC_REVIEWERS }}
-        run: |
-          rounds=$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR/reviews" \
-            | jq -s 'add' | python3 .adlc/scripts/adlc.py review-rounds --reviewers "$REVIEWERS")
-          echo "Agent review rounds: $rounds" >> "$GITHUB_STEP_SUMMARY"
-          if [ "$rounds" -ge 2 ]; then
-            gh label create adlc:owner-decides --force >/dev/null
-            gh pr edit "$PR" --add-label adlc:owner-decides
-          fi
-
-  t3-approval:
-    needs: tier
-    if: github.event.pull_request.user.login != 'dependabot[bot]'
-    runs-on: ubuntu-latest
-    steps:
-      - if: needs.tier.outputs.tier == 'T3'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PR: ${{ github.event.pull_request.number }}
-          HEAD: ${{ github.event.pull_request.head.sha }}
-          OWNER: ${{ vars.ADLC_OWNER }}
-        run: |
-          approved=$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR/reviews" | jq -s 'add' \
-            | jq --arg o "$OWNER" --arg h "$HEAD" \
-              '[.[] | select((.user.login|ascii_downcase)==($o|ascii_downcase) and .state=="APPROVED" and .commit_id==$h)] | length')
-          if [ "$approved" -eq 0 ]; then
-            echo "T3 change: needs an approval from $OWNER on commit $HEAD." >&2
-            exit 1
-          fi
+  adlc:
+    uses: anandfrancis93/ADLC/.github/workflows/adlc.yml@v{{ADLC_VERSION}}
+    with:
+      owner: ${{ vars.ADLC_OWNER }}

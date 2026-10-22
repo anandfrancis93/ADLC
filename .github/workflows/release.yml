@@ -1,4 +1,4 @@
-# Release workflow for the ADLC repo itself (same as templates/github/workflows/adlc-release.yml).
+# Release workflow for the ADLC repo itself (same job as the shared .github/workflows/adlc-release.yml).
 # Pushing tag vX.Y.Z creates a GitHub release whose notes are that version's CHANGELOG.md entry.
 # Fails if the entry is missing, so the entry must be committed before the tag.
 name: ADLC release

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """ADLC helper. Standard library only, so it runs in any repo and any CI.
+Repos get a copy at .adlc/scripts/adlc.py from `sync`. Edit it only in the ADLC repo.
 
   adlc.py tier [--map FILE] [PATH ...]    print T1, T2 or T3 for the paths (stdin if none)
   adlc.py check-protected [--list FILE]   Claude Code PreToolUse hook: block edits to protected paths
@@ -12,9 +13,14 @@
                                           `git log --format='%h%x1f%s%x1f%b%x1e' vX.Y.Z..HEAD` on stdin
   adlc.py changelog-entry VERSION [--file CHANGELOG.md]
                                           print one release's entry (for release notes); fail if missing
+  adlc.py sync TARGET [--releases] [--check]
+                                          from an ADLC checkout at a release tag: write the ADLC's files
+                                          into the repo at TARGET (see docs/sync.md)
+  adlc.py manifest [--write | --check]    in the ADLC repo: the hashes the drift job in adlc.yml compares
 """
 import argparse
 import datetime
+import hashlib
 import json
 import os
 import re
@@ -311,6 +317,160 @@ def cmd_changelog_entry(args):
     return 0
 
 
+# Files `sync` writes into a repo, as (path in the repo, source in the ADLC repo).
+# Managed files belong to the ADLC: every sync overwrites them, and the drift job in adlc.yml
+# fails a PR whose copy differs from the pinned release. A source of None is the version record.
+MANAGED = (
+    (".adlc/version", None),
+    (".adlc/scripts/adlc.py", "scripts/adlc.py"),
+    (".githooks/pre-commit", "templates/git-hooks/pre-commit"),
+    (".github/workflows/adlc.yml", "templates/github/workflows/adlc.yml"),
+    (".github/workflows/adlc-review.yml", "templates/github/workflows/adlc-review.yml"),
+    (".github/workflows/adlc-pr-title.yml", "templates/github/workflows/adlc-pr-title.yml"),
+    (".github/workflows/adlc-dependabot.yml", "templates/github/workflows/adlc-dependabot.yml"),
+    (".github/pull_request_template.md", "templates/pull_request_template.md"),
+)
+# Managed only in repos that ship releases: sync --releases adds it, and later syncs keep it.
+MANAGED_RELEASES = ((".github/workflows/adlc-release.yml", "templates/github/workflows/adlc-release.yml"),)
+# Repo-owned files start from a template. Sync adds them only when missing and never checks them.
+SEEDS = (
+    ("AGENTS.md", "templates/AGENTS.md"),
+    ("REVIEW.md", "templates/REVIEW.md"),
+    (".adlc/tiers", "templates/adlc/tiers"),
+    (".adlc/protected", "templates/adlc/protected"),
+    (".adlc/install", "templates/adlc/install"),
+    (".adlc/fast-check", "templates/adlc/fast-check"),
+    (".adlc/full-test", "templates/adlc/full-test"),
+    (".adlc/retire-log.md", "templates/adlc/retire-log.md"),
+    (".editorconfig", "templates/editorconfig"),
+    (".github/dependabot.yml", "templates/github/dependabot.yml"),
+)
+SEEDS_RELEASES = (("CHANGELOG.md", "templates/CHANGELOG.md"),)
+VERSION_TOKEN = b"{{ADLC_VERSION}}"
+DRIFT_WORKFLOW = ".github/workflows/adlc.yml"
+MANIFEST_BEGIN = "# BEGIN manifest"
+MANIFEST_END = "# END manifest"
+
+
+def adlc_root():
+    """The ADLC checkout this script is in. A repo's .adlc/scripts copy has no templates to sync."""
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if not os.path.isfile(os.path.join(root, ".claude-plugin", "plugin.json")):
+        sys.exit("adlc.py: run this with scripts/adlc.py in an ADLC checkout, not a repo's .adlc/scripts copy.")
+    return root
+
+
+def adlc_version(root):
+    with open(os.path.join(root, ".claude-plugin", "plugin.json"), encoding="utf-8") as f:
+        return json.load(f)["version"]
+
+
+def render(root, source, version):
+    """The bytes and executable bit `sync` writes for a source. Templates get the version filled in."""
+    if source is None:
+        return f"{version}\n".encode(), False
+    path = os.path.join(root, source)
+    with open(path, "rb") as f:
+        data = f.read()
+    if source.startswith("templates/"):
+        data = data.replace(VERSION_TOKEN, version.encode())
+    return data, bool(os.stat(path).st_mode & 0o100)
+
+
+def manifest_lines(root, version):
+    """The shell lines between the markers in the drift job: version and `sha256 path [optional]` rows."""
+    rows = [(p, s, "") for p, s in MANAGED] + [(p, s, " optional") for p, s in MANAGED_RELEASES]
+    lines = [f"version={version}", "manifest='"]
+    for path, source, flag in rows:
+        lines.append(f"{hashlib.sha256(render(root, source, version)[0]).hexdigest()} {path}{flag}")
+    return lines + ["'"]
+
+
+def cmd_manifest(args):
+    root = adlc_root()
+    lines = manifest_lines(root, adlc_version(root))
+    if not (args.write or args.check):
+        print("\n".join(lines))
+        return 0
+    path = os.path.join(root, DRIFT_WORKFLOW)
+    with open(path, encoding="utf-8") as f:
+        text = f.read().split("\n")
+    begin = next((i for i, line in enumerate(text) if line.strip().startswith(MANIFEST_BEGIN)), None)
+    end = next((i for i, line in enumerate(text) if line.strip().startswith(MANIFEST_END)), None)
+    if begin is None or end is None or end < begin:
+        sys.exit(f"adlc.py: {DRIFT_WORKFLOW} has no '{MANIFEST_BEGIN}' ... '{MANIFEST_END}' block.")
+    indent = text[begin][: len(text[begin]) - len(text[begin].lstrip())]
+    new = [indent + line for line in lines]
+    if text[begin + 1 : end] == new:
+        return 0
+    if args.check:
+        print(f"ADLC: the manifest in {DRIFT_WORKFLOW} is out of date. Run: python3 scripts/adlc.py manifest --write",
+              file=sys.stderr)
+        return 1
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("\n".join(text[: begin + 1] + new + text[end:]))
+    return 0
+
+
+def check_release_checkout(root, version):
+    """Refuse a git checkout that is not exactly at tag vVERSION, so a repo never gets unreleased files."""
+    top = subprocess.run(["git", "-C", root, "rev-parse", "--show-toplevel"], capture_output=True, text=True)
+    if top.returncode != 0 or os.path.realpath(top.stdout.strip()) != os.path.realpath(root):
+        return
+    tag = subprocess.run(["git", "-C", root, "describe", "--exact-match", "--tags", "HEAD"],
+                         capture_output=True, text=True).stdout.strip()
+    dirty = subprocess.run(["git", "-C", root, "status", "--porcelain", "--untracked-files=no"],
+                           capture_output=True, text=True).stdout.strip()
+    if tag != f"v{version}" or dirty:
+        sys.exit(f"adlc.py: {root} is not a clean checkout of release tag v{version}. "
+                 "Sync from a release: git checkout vX.Y.Z (see docs/sync.md).")
+
+
+def cmd_sync(args):
+    root = adlc_root()
+    version = adlc_version(root)
+    check_release_checkout(root, version)
+    target = os.path.abspath(args.target)
+    if not os.path.isdir(target):
+        sys.exit(f"adlc.py: {target} is not a directory.")
+    releases = args.releases or os.path.exists(os.path.join(target, MANAGED_RELEASES[0][0]))
+    managed = MANAGED + (MANAGED_RELEASES if releases else ())
+    seeds = SEEDS + (SEEDS_RELEASES if releases else ())
+    before = "none"
+    if os.path.isfile(os.path.join(target, ".adlc", "version")):
+        with open(os.path.join(target, ".adlc", "version"), encoding="utf-8") as f:
+            before = f.read().strip()
+    changes = []
+    for (path, source), owned in [(m, False) for m in managed] + [(s, True) for s in seeds]:
+        dest = os.path.join(target, path)
+        exists = os.path.isfile(dest)
+        if owned and exists:
+            continue
+        data, executable = render(root, source, version)
+        if exists:
+            with open(dest, "rb") as f:
+                same = f.read() == data
+            if same and bool(os.stat(dest).st_mode & 0o100) == executable:
+                continue
+        changes.append(f"{'update' if exists else 'add'} {path}")
+        if args.check:
+            continue
+        os.makedirs(os.path.dirname(dest) or ".", exist_ok=True)
+        with open(dest, "wb") as f:
+            f.write(data)
+        os.chmod(dest, 0o755 if executable else 0o644)
+    for change in changes:
+        print(("would " if args.check else "") + change)
+    if args.check:
+        return 1 if changes else 0
+    if os.path.exists(os.path.join(target, ".git")):
+        hooks = subprocess.run(["git", "-C", target, "config", "core.hooksPath", ".githooks"], capture_output=True)
+        if hooks.returncode != 0:
+            print("ADLC: could not set core.hooksPath; run: git config core.hooksPath .githooks", file=sys.stderr)
+    print(f"ADLC {before} -> {version}: {len(changes)} file(s) changed.", file=sys.stderr)
+    return 0
+
+
 def main():
     p = argparse.ArgumentParser(prog="adlc.py")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -335,6 +495,14 @@ def main():
     ce = sub.add_parser("changelog-entry")
     ce.add_argument("version")
     ce.add_argument("--file", default="CHANGELOG.md")
+    sy = sub.add_parser("sync")
+    sy.add_argument("target")
+    sy.add_argument("--releases", action="store_true")
+    sy.add_argument("--check", action="store_true")
+    m = sub.add_parser("manifest")
+    mode = m.add_mutually_exclusive_group()
+    mode.add_argument("--write", action="store_true")
+    mode.add_argument("--check", action="store_true")
     args = p.parse_args()
     return {
         "tier": cmd_tier,
@@ -344,6 +512,8 @@ def main():
         "pr-title": cmd_pr_title,
         "changelog-draft": cmd_changelog_draft,
         "changelog-entry": cmd_changelog_entry,
+        "sync": cmd_sync,
+        "manifest": cmd_manifest,
     }[args.cmd](args)
 
 

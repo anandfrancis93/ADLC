@@ -10,8 +10,10 @@ This repo defines a lifecycle; it has no application code.
 - `docs/`: the lifecycle, one file per topic.
 - `skills/`: Agent Skills (SKILL.md). Name must match the folder.
 - `scripts/`: tier classifier, protected-path check, review-round counter, PR-title check,
-  changelog draft and entry.
-- `templates/`: files a repo copies to adopt the ADLC.
+  changelog draft and entry, sync into a repo, drift manifest.
+- `templates/`: files `adlc.py sync` writes into a repo (`docs/sync.md`).
+- `.github/workflows/adlc*.yml`: shared CI that other repos call at a release tag.
+  The other workflows run on this repo only.
 - `.claude-plugin/`, `agents/`, `hooks/`: Claude Code plugin only.
 
 ## Rules
@@ -20,3 +22,6 @@ This repo defines a lifecycle; it has no application code.
 - Write prose for people by `skills/adlc-writing/SKILL.md`.
 - PR titles are Conventional Commits; PRs are squash-merged.
 - Do not edit `CHANGELOG.md` in feature PRs. Releases use the `adlc-version` skill.
+- After changing `scripts/`, `templates/` or the version in `.claude-plugin/plugin.json`,
+  run `python3 scripts/adlc.py manifest --write`. The tests fail until you do.
+- After pushing a release tag, run the release check in `docs/sync.md`.

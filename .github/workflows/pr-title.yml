@@ -1,4 +1,4 @@
-# PR title check for the ADLC repo itself (same as templates/github/workflows/adlc-pr-title.yml).
+# PR title check for the ADLC repo itself (same job as the shared .github/workflows/adlc-pr-title.yml).
 name: ADLC PR title
 
 on:

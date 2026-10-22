@@ -11,12 +11,14 @@
 
 ## Dependabot
 
-Copy `templates/github/dependabot.yml` to `.github/dependabot.yml`, keep one entry per ecosystem
-the repo uses, and always keep `github-actions`.
+`adlc.py sync` adds `.github/dependabot.yml` from `templates/github/dependabot.yml`. Keep one entry
+per ecosystem the repo uses, and always keep `github-actions`.
 
 - Version updates weekly. Patch and minor updates are grouped into one PR per ecosystem; each major
   update gets its own PR.
 - PR titles start `chore(deps):` so they pass the Conventional Commits title check.
+- The `github-actions` entry ignores the ADLC's own workflows. ADLC releases arrive as sync PRs
+  instead ([sync.md](sync.md)).
 - Tiers (`adlc-dependabot.yml`): patch and minor are T1, major is T2, whatever files they touch.
   A Dependabot PR with commits from anyone else fails that job and is tiered by hand.
 - Security updates: turn on "Dependabot security updates" in the repo settings. The weekly

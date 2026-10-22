@@ -51,6 +51,7 @@ and the tier decides how much of stages 2 to 6 a change goes through
 - An agent that reads issues, PRs or comments from people outside the repo may only comment.
   It never pushes, merges or changes settings.
 - Dependabot opens weekly version updates, and security updates outside that schedule. See [toolchain.md](toolchain.md).
+- After each ADLC release, a check lists repos behind it, and each gets a sync PR. A weekly run is the backstop. See [sync.md](sync.md).
 - Each incident adds a regression test or eval.
 
 ## 8 Retire

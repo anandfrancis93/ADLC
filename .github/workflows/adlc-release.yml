@@ -1,0 +1,23 @@
+# ADLC release, shared. Only for repos that ship versioned releases. Repos call it from the
+# .github/workflows/adlc-release.yml that `adlc.py sync --releases` writes. See docs/sync.md.
+# Pushing tag vX.Y.Z creates a GitHub release whose notes are that version's CHANGELOG.md entry.
+# Fails if the entry is missing, so the entry must be committed before the tag.
+name: ADLC release
+
+on:
+  workflow_call:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          python3 .adlc/scripts/adlc.py changelog-entry "$TAG" > notes.md
+          gh release create "$TAG" --title "$TAG" --notes-file notes.md --verify-tag

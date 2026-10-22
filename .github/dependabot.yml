@@ -1,4 +1,5 @@
-# Dependabot for the ADLC repo itself: only GitHub Actions (see templates/github/dependabot.yml).
+# Dependabot for the ADLC repo itself: only GitHub Actions, including the shared adlc*.yml workflows
+# that other repos call (see templates/github/dependabot.yml).
 version: 2
 updates:
   - package-ecosystem: github-actions

@@ -1,0 +1,19 @@
+# ADLC PR title check, shared. Repos call it from the .github/workflows/adlc-pr-title.yml
+# that `adlc.py sync` writes. See docs/sync.md.
+# Make "pr-title" a required check. PRs are squash-merged, so the title becomes the commit on main.
+name: ADLC PR title
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  pr-title:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: python3 .adlc/scripts/adlc.py pr-title "$TITLE"

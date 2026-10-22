@@ -24,31 +24,31 @@ Details: [docs/stages.md](docs/stages.md), [docs/risk-tiers.md](docs/risk-tiers.
 [docs/commits-and-releases.md](docs/commits-and-releases.md) (Conventional Commits, SemVer,
 Common Changelog), [docs/design-md.md](docs/design-md.md) (optional, repos with a UI),
 [docs/formatting.md](docs/formatting.md), [docs/secrets.md](docs/secrets.md),
-[docs/toolchain.md](docs/toolchain.md) (version files, lockfiles, Dependabot).
+[docs/toolchain.md](docs/toolchain.md) (version files, lockfiles, Dependabot),
+[docs/sync.md](docs/sync.md) (keeping repos on the latest release).
 Sources and what each contributed: [docs/sources.md](docs/sources.md).
 
 ## Adopt it in a repo
 
-1. Copy `templates/AGENTS.md` to the repo root and fill in its facts. Keep it under 60 lines.
-2. Copy `templates/adlc/` to `.adlc/` and edit `tiers` (path-to-tier map), `install`,
-   `fast-check` (formatter and linter) and `full-test`.
-3. Copy `templates/git-hooks/pre-commit` to `.githooks/pre-commit` and run
-   `git config core.hooksPath .githooks`. Install Betterleaks v1.9.0 ([how](docs/secrets.md)).
-   There is no pre-push hook.
-4. Copy `templates/github/workflows/adlc.yml`, `adlc-pr-title.yml` and `adlc-dependabot.yml` to
-   `.github/workflows/` (and `adlc-release.yml` if the repo ships releases), `templates/github/dependabot.yml`
-   to `.github/`, and `templates/editorconfig` to `.editorconfig`. Commit a version file per language
-   and the lockfile ([toolchain](docs/toolchain.md)). Set squash-only merging
-   ([how](docs/commits-and-releases.md#commits-every-repo)), and copy
-   `templates/REVIEW.md` and `templates/pull_request_template.md` to the repo root and `.github/`.
-5. Copy `scripts/` to `.adlc/scripts/` (the hook and workflow call them there).
-6. Skills: Claude Code users install the plugin (below). For other tools, copy
+1. Run `scripts/adlc.py sync` from a release tag of this repo ([how](docs/sync.md)).
+   It writes the files the ADLC manages and adds templates for the files the repo owns.
+2. Fill in `AGENTS.md` (under 60 lines) and `.adlc/tiers`, `install`, `fast-check` and `full-test`.
+   Keep one entry per ecosystem in `.github/dependabot.yml`.
+3. Commit a version file per language and the lockfile ([toolchain](docs/toolchain.md)).
+   Install Betterleaks v1.9.0 ([how](docs/secrets.md)). There is no pre-push hook.
+4. Set the repo settings once: squash-only merging ([how](docs/commits-and-releases.md#commits-every-repo)),
+   the `ADLC_OWNER` and `ADLC_REVIEWERS` variables, and the required checks named in the `adlc.yml`
+   and `adlc-pr-title.yml` callers.
+5. Skills: Claude Code users install the plugin (below). For other tools, copy
    `skills/*` into that tool's skills directory.
+
+CI fails a PR that edits a file the ADLC manages. Updates arrive as sync PRs ([sync](docs/sync.md)).
 
 ## Versions
 
 The ADLC follows [SemVer](https://semver.org/spec/v2.0.0.html). Its public API is the rules in
-`docs/`, the `scripts/adlc.py` commands, the files in `templates/`, and the skills. A change
+`docs/`, the `scripts/adlc.py` commands, the files in `templates/`, the shared workflows in
+`.github/workflows/adlc*.yml`, and the skills. A change
 that makes a compliant repo non-compliant is a new major version. Before 1.0.0 it is a new
 minor version instead, because SemVer lets anything change while the major version is 0. Changes are listed in
 [CHANGELOG.md](CHANGELOG.md) ([Common Changelog](https://common-changelog.org/) format).

@@ -1,4 +1,4 @@
-# ADLC Dependabot config. Copy to .github/dependabot.yml and keep one entry per ecosystem the repo uses.
+# ADLC Dependabot config. `adlc.py sync` adds it once; then the repo owns it. Keep one entry per ecosystem the repo uses.
 # Weekly version updates; patch and minor grouped into one PR per ecosystem; majors one PR each.
 # Security updates are separate: turn on "Dependabot security updates" in the repo settings.
 # The "chore(deps)" prefix keeps PR titles valid Conventional Commits.
@@ -11,6 +11,9 @@ updates:
     commit-message:
       prefix: chore
       include: scope
+    # ADLC releases arrive as sync PRs, which also update the copied files (docs/sync.md in the ADLC repo).
+    ignore:
+      - dependency-name: "anandfrancis93/ADLC*"
     groups:
       github-actions:
         patterns: ["*"]

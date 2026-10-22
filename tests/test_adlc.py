@@ -239,6 +239,53 @@ class ReviewRounds(unittest.TestCase):
         self.assertEqual(out, "3")
 
 
+class T3Approved(unittest.TestCase):
+    def check(self, reviews=(), events=(), owner="Anand", since="2026-10-22T05:00:00Z"):
+        d = tempfile.mkdtemp()
+        files = {}
+        for name, data in (("reviews", reviews), ("events", events)):
+            files[name] = os.path.join(d, name + ".json")
+            with open(files[name], "w") as f:
+                json.dump(list(data), f)
+        return run(["t3-approved", "--owner", owner, "--head", "h2", "--since", since,
+                    "--reviews", files["reviews"], "--events", files["events"]])[0]
+
+    def label(self, event, login, name="adlc:t3-approved", at="2026-10-22T05:10:00Z"):
+        return {"event": event, "actor": {"login": login}, "label": {"name": name}, "created_at": at}
+
+    def test_owner_review_of_the_latest_commit_passes(self):
+        self.assertEqual(self.check([{"user": {"login": "anand"}, "state": "APPROVED", "commit_id": "h2"}]), 0)
+        self.assertEqual(self.check([{"user": {"login": "anand"}, "state": "APPROVED", "commit_id": "h1"}]), 1)
+        self.assertEqual(self.check([{"user": {"login": "other"}, "state": "APPROVED", "commit_id": "h2"}]), 1)
+
+    def test_label_counts_only_when_the_owner_added_it_last(self):
+        self.assertEqual(self.check(events=[self.label("labeled", "anand")]), 0)
+        self.assertEqual(self.check(events=[self.label("labeled", "other")]), 1)
+        self.assertEqual(self.check(events=[self.label("labeled", "anand"), self.label("unlabeled", "bot")]), 1)
+        self.assertEqual(self.check(events=[self.label("labeled", "anand"), self.label("unlabeled", "bot"),
+                                            self.label("labeled", "other")]), 1)
+        self.assertEqual(self.check(events=[self.label("labeled", "anand"), self.label("labeled", "x", "adlc:T3"),
+                                            {"event": "committed"}]), 0)
+        self.assertEqual(self.check(events=[self.label("labeled", "anand", "approved")]), 1)
+
+    def test_events_count_in_time_order(self):
+        added = {**self.label("labeled", "anand", at="2026-10-22T05:10:00Z"), "id": 1}
+        removed = {**self.label("unlabeled", "bot", at="2026-10-22T05:11:00Z"), "id": 2}
+        self.assertEqual(self.check(events=[removed, added]), 1)
+
+    def test_label_from_before_the_commit_does_not_count(self):
+        self.assertEqual(self.check(events=[self.label("labeled", "anand", at="2026-10-22T04:59:59Z")]), 1)
+        self.assertEqual(self.check(events=[self.label("labeled", "anand", at="2026-10-22T05:00:00Z")]), 1)
+        self.assertEqual(self.check(events=[self.label("labeled", "anand")], since=""), 1)
+
+    def test_unset_owner_fails(self):
+        self.assertEqual(self.check([{"user": None, "state": "APPROVED", "commit_id": "h2"}], owner=""), 1)
+        self.assertEqual(self.check(events=[{**self.label("labeled", "x"), "actor": None}], owner=" "), 1)
+
+    def test_no_approval_fails(self):
+        self.assertEqual(self.check(), 1)
+
+
 if __name__ == "__main__":
     unittest.main()
 
@@ -342,6 +389,7 @@ class SyncedRepo(unittest.TestCase):
         self.adlc = os.path.join(tmp, "ADLC")
         for d in ("scripts", "templates", ".claude-plugin", ".github"):
             shutil.copytree(os.path.join(ROOT, d), os.path.join(self.adlc, d))
+        shutil.copy(os.path.join(ROOT, "CHANGELOG.md"), self.adlc)
         with open(os.path.join(ROOT, ".claude-plugin", "plugin.json")) as f:
             self.version = json.load(f)["version"]
         git_in(self.adlc, "init", "-q")
@@ -481,6 +529,139 @@ class Drift(SyncedRepo):
         self.assertEqual(self.drift()[0], 0)
 
 
+FAKE_GH = r"""
+import json, os, subprocess, sys
+state = os.environ["FAKE_GH_STATE"]
+args = sys.argv[1:]
+def opt(name):
+    return args[args.index(name) + 1]
+if args[:2] == ["repo", "list"]:
+    print(open(os.path.join(state, "repos.json")).read())
+elif args[0] == "api":
+    repo, path = args[1].split("/contents/")
+    repo = repo[len("repos/"):]
+    if repo == "o/broken":
+        sys.exit("gh: Server Error (HTTP 500)")
+    p = subprocess.run(["git", "--git-dir", os.path.join(state, "remotes", repo), "show", "HEAD:" + path],
+                       capture_output=True, text=True)
+    if p.returncode:
+        sys.exit("gh: Not Found (HTTP 404)")
+    sys.stdout.write(p.stdout)
+elif args[:2] == ["pr", "list"]:
+    open_prs = os.path.join(state, "open", opt("-R").replace("/", "_"))
+    print(open(open_prs).read() if os.path.exists(open_prs) else "[]")
+elif args[:2] == ["pr", "create"]:
+    with open(os.path.join(state, "created.jsonl"), "a") as f:
+        f.write(json.dumps({"repo": opt("-R"), "head": opt("--head"), "base": opt("--base"),
+                            "title": opt("--title"), "body": open(opt("--body-file")).read()}) + "\n")
+    print("https://github.com/" + opt("-R") + "/pull/1")
+else:
+    sys.exit("fake gh: unexpected " + " ".join(args))
+"""
+
+
+class SyncRepos(SyncedRepo):
+    """Runs sync-repos against a fake gh and local bare repos standing in for github.com."""
+
+    def setUp(self):
+        super().setUp()
+        self.state = tempfile.mkdtemp()
+        os.makedirs(os.path.join(self.state, "open"))
+        bin_dir = os.path.join(self.state, "bin")
+        os.makedirs(bin_dir)
+        with open(os.path.join(bin_dir, "gh"), "w") as f:
+            f.write(f"#!{sys.executable}\n{FAKE_GH}")
+        os.chmod(os.path.join(bin_dir, "gh"), 0o755)
+        repos = {"o/behind": {".adlc/version": "0.0.1\n", ".adlc/tiers": "T1 docs/**\n", "AGENTS.md": "# mine\n"},
+                 "o/current": {".adlc/version": f"{self.version}\n"},
+                 "o/copied": {".adlc/tiers": "T1 docs/**\n"},
+                 "o/other": {"README.md": "hi\n"},
+                 "o/broken": {"README.md": "hi\n"},
+                 "o/ADLC": {".adlc/version": "0.0.1\n"}}
+        for name, files in repos.items():
+            self.remote(name, files)
+        with open(os.path.join(self.state, "repos.json"), "w") as f:
+            json.dump([{"nameWithOwner": n, "defaultBranchRef": {"name": "main"}} for n in repos], f)
+        self.env = {
+            "PATH": bin_dir + os.pathsep + os.environ["PATH"], "GH_TOKEN": "t", "FAKE_GH_STATE": self.state,
+            "GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": f"url.file://{self.state}/remotes/.insteadOf",
+            "GIT_CONFIG_VALUE_0": "https://github.com/", "GITHUB_STEP_SUMMARY": os.path.join(self.state, "summary"),
+        }
+
+    def remote(self, name, files):
+        work = tempfile.mkdtemp()
+        git_in(work, "init", "-q", "-b", "main")
+        for path, text in files.items():
+            os.makedirs(os.path.join(work, os.path.dirname(path)), exist_ok=True)
+            with open(os.path.join(work, path), "w") as f:
+                f.write(text)
+        git_in(work, "add", "-A")
+        git_in(work, "commit", "-q", "-m", "init")
+        bare = os.path.join(self.state, "remotes", name)
+        os.makedirs(os.path.dirname(bare), exist_ok=True)
+        git_in(work, "clone", "-q", "--bare", work, bare)
+
+    def sync_repos(self, *args):
+        p = subprocess.run([sys.executable, os.path.join(self.adlc, "scripts", "adlc.py"), "sync-repos",
+                            "--owner", "o", "--skip", "o/ADLC", *args],
+                           capture_output=True, text=True, env={**os.environ, **self.env})
+        return p.returncode, p.stdout, p.stderr
+
+    def created(self):
+        path = os.path.join(self.state, "created.jsonl")
+        if not os.path.exists(path):
+            return []
+        with open(path) as f:
+            return [json.loads(line) for line in f]
+
+    def remote_file(self, name, ref, path):
+        return git_in(self.state, "--git-dir", os.path.join(self.state, "remotes", name), "show", f"{ref}:{path}")
+
+    def test_opens_a_sync_pr_only_where_the_repo_is_behind(self):
+        code, out, err = self.sync_repos()
+        self.assertEqual(code, 1, err)
+        branch = f"adlc/sync-{self.version}"
+        self.assertIn("- o/behind: on 0.0.1; opened https://github.com/o/behind/pull/1", out)
+        self.assertIn(f"- o/current: on {self.version}", out)
+        self.assertIn("- o/copied: not synced yet", out)
+        self.assertIn("- o/broken: failed: could not read .adlc/version: gh: Server Error (HTTP 500)", out)
+        self.assertNotIn("o/other", out)
+        self.assertNotIn("o/ADLC", out)
+        [pr] = self.created()
+        self.assertEqual((pr["repo"], pr["head"], pr["base"], pr["title"]),
+                         ("o/behind", branch, "main", f"chore(adlc): sync to {self.version}"))
+        self.assertIn(f"from ADLC 0.0.1 to {self.version}", pr["body"])
+        self.assertIn("- update .adlc/version", pr["body"])
+        self.assertIn("**Breaking**", pr["body"])
+        self.assertIn(f"## ADLC {self.version}", pr["body"])
+        self.assertIn("## ADLC 0.1.0", pr["body"])
+        self.assertEqual(self.remote_file("o/behind", branch, ".adlc/version"), self.version)
+        self.assertEqual(self.remote_file("o/behind", branch, "AGENTS.md"), "# mine")
+        self.assertEqual(self.remote_file("o/behind", "main", ".adlc/version"), "0.0.1")
+        with open(self.env["GITHUB_STEP_SUMMARY"]) as f:
+            self.assertEqual(f.read(), out)
+
+    def test_dry_run_and_an_open_pr_open_nothing(self):
+        code, out, _ = self.sync_repos("--dry-run")
+        self.assertIn(f"- o/behind: on 0.0.1; would open a PR to sync to {self.version}", out)
+        with open(os.path.join(self.state, "open", "o_behind"), "w") as f:
+            json.dump([{"url": "https://github.com/o/behind/pull/7"}], f)
+        code, out, _ = self.sync_repos()
+        self.assertIn("- o/behind: on 0.0.1; sync PR already open: https://github.com/o/behind/pull/7", out)
+        self.assertEqual(self.created(), [])
+
+    def test_needs_a_token_and_a_release_checkout(self):
+        self.env["GH_TOKEN"] = ""
+        code, _, err = self.sync_repos()
+        self.assertNotEqual(code, 0)
+        self.assertIn("GH_TOKEN", err)
+        self.env["GH_TOKEN"] = "t"
+        git_in(self.adlc, "commit", "-q", "--allow-empty", "-m", "unreleased")
+        code, _, err = self.sync_repos()
+        self.assertIn("release tag", err)
+        self.assertEqual(self.created(), [])
+
+
 class Manifest(unittest.TestCase):
     def test_workflow_manifest_is_current(self):
         code, _, err = run(["manifest", "--check"])
@@ -522,6 +703,22 @@ class Workflows(unittest.TestCase):
         with open(os.path.join(ROOT, ".github", "workflows", name)) as f:
             text = f.read()
         return set(re.findall(r"^  ([a-z0-9-]+):$", text.split("\njobs:\n", 1)[1], re.M))
+
+    def job(self, name, job):
+        with open(os.path.join(ROOT, ".github", "workflows", name)) as f:
+            text = f.read()
+        return re.search(rf"(?ms)^  {job}:\n.*?(?=^  [a-z0-9-]+:\n|\Z)", text.split("\njobs:\n", 1)[1]).group(0)
+
+    def test_t3_approval_is_the_same_in_both_workflows_and_runs_when_tier_fails(self):
+        job = self.job("adlc.yml", "t3-approval")
+        self.assertEqual(job, self.job("adlc-review.yml", "t3-approval"))
+        self.assertIn("!cancelled()", job)
+        self.assertIn("needs.tier.result != 'success'", job)
+
+    def test_label_changes_rerun_the_review_caller(self):
+        with open(os.path.join(ROOT, "templates", "github", "workflows", "adlc-review.yml")) as f:
+            self.assertIn("  pull_request:\n    types: [labeled, unlabeled]\n", f.read())
+        self.assertIn("synchronize", self.job("adlc.yml", "tier"))
 
     def test_review_runs_only_review_jobs(self):
         self.assertEqual(self.jobs("adlc-review.yml"), {"tier", "t3-approval", "review-budget"})

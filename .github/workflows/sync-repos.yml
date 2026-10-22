@@ -1,0 +1,30 @@
+# Opens a sync PR in each of the owner's repos that is on an older ADLC release. Runs on this repo only.
+# A release tag starts it. To run it again, pick the release tag under "Run workflow".
+# Needs the ADLC_SYNC_TOKEN secret, because the built-in token works only in this repo. See docs/sync.md.
+name: ADLC sync repos
+
+on:
+  push:
+    tags: ['v[0-9]*.[0-9]*.[0-9]*']
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: List what it would do, and open no PRs.
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  sync-repos:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - env:
+          GH_TOKEN: ${{ secrets.ADLC_SYNC_TOKEN }}
+          DRY_RUN: ${{ inputs.dry-run }}
+        run: |
+          args=(--owner "$GITHUB_REPOSITORY_OWNER" --skip "$GITHUB_REPOSITORY")
+          if [ "$DRY_RUN" = true ]; then args+=(--dry-run); fi
+          python3 scripts/adlc.py sync-repos "${args[@]}"

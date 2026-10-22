@@ -24,4 +24,4 @@ This repo defines a lifecycle; it has no application code.
 - Do not edit `CHANGELOG.md` in feature PRs. Releases use the `adlc-version` skill.
 - After changing `scripts/`, `templates/` or the version in `.claude-plugin/plugin.json`,
   run `python3 scripts/adlc.py manifest --write`. The tests fail until you do.
-- After pushing a release tag, run the release check in `docs/sync.md`.
+- After pushing a release tag, read the summary of its `ADLC sync repos` run (`docs/sync.md`).

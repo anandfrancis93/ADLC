@@ -38,7 +38,7 @@ and the tier decides how much of stages 2 to 6 a change goes through
 
 ## 6 Release
 - T1, T2: merge when CI and review pass.
-- T3: the owner approves. Where the repo deploys, use a feature flag or staged rollout and a tested rollback.
+- T3: the owner approves ([how](risk-tiers.md#t3-approval)). Where the repo deploys, use a feature flag or staged rollout and a tested rollback.
 - Repos that ship releases: SemVer version, Common Changelog entry written at release time, tag `vX.Y.Z`.
   See [commits-and-releases.md](commits-and-releases.md).
 - Where the repo deploys on a push to main, watch the deploy run until it ends.
@@ -51,7 +51,7 @@ and the tier decides how much of stages 2 to 6 a change goes through
 - An agent that reads issues, PRs or comments from people outside the repo may only comment.
   It never pushes, merges or changes settings.
 - Dependabot opens weekly version updates, and security updates outside that schedule. See [toolchain.md](toolchain.md).
-- After each ADLC release, a check lists repos behind it, and each gets a sync PR. A weekly run is the backstop. See [sync.md](sync.md).
+- Each ADLC release opens a sync PR in every repo behind it. See [sync.md](sync.md).
 - Each incident adds a regression test or eval.
 
 ## 8 Retire

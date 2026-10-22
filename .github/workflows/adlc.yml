@@ -1,8 +1,8 @@
 # ADLC checks on pull_request, shared. Repos call this workflow from the .github/workflows/adlc.yml
 # that `adlc.py sync` writes, pinned to a release tag. It runs in the calling repo: the checkout,
 # the scripts in .adlc/scripts and the token are that repo's. See docs/sync.md.
-# Review events run adlc-review.yml instead. A job skipped on a review run would report success
-# under the same check name, so no job here runs on review events.
+# Review and label events run adlc-review.yml instead. A job skipped on those runs would report
+# success under the same check name, so no job here runs on them.
 # Required checks: drift, fast-check, secrets, protected, full-test and t3-approval.
 # Dependabot PRs get their tier from adlc-dependabot.yml instead (their pull_request token is read-only).
 name: ADLC
@@ -19,6 +19,7 @@ permissions:
   contents: read
   pull-requests: write
   issues: write
+  checks: read
 
 jobs:
   tier:
@@ -27,6 +28,17 @@ jobs:
     outputs:
       tier: ${{ steps.tier.outputs.tier }}
     steps:
+      # t3-approval also ignores a label older than the commit, so this is a second guard.
+      - name: Drop the T3 approval label after a new commit
+        if: github.event.action == 'synchronize'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          if ! out=$(gh api -X DELETE "repos/$GITHUB_REPOSITORY/issues/$PR/labels/adlc:t3-approved" 2>&1); then
+            case "$out" in *"HTTP 404"*) ;; *) echo "$out" >&2; exit 1 ;; esac
+          fi
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
@@ -44,7 +56,7 @@ jobs:
           PR: ${{ github.event.pull_request.number }}
           TIER: ${{ steps.tier.outputs.tier }}
         run: |
-          for t in T1 T2 T3; do gh label create "adlc:$t" --force >/dev/null; done
+          for t in T1 T2 T3 t3-approved; do gh label create "adlc:$t" --force >/dev/null; done
           gh pr edit "$PR" --remove-label adlc:T1,adlc:T2,adlc:T3 --add-label "adlc:$TIER"
 
   # The files that `adlc.py sync` manages must match this release byte for byte.
@@ -59,10 +71,10 @@ jobs:
           version=0.4.0
           manifest='
           40b8eb4000a913a7791090535f291d3d369874162a89ef3c9e3d4e887a1b9e79 .adlc/version
-          4fa5a8b8c091a198f468624a83239ec0e62975e3d3704d7dcba20f038f5092dc .adlc/scripts/adlc.py
+          ed0563668d660d0a257382d6d7843a3f166eda9ab827450750390dc5adfc2974 .adlc/scripts/adlc.py
           378599cfc8ee4962b68b511d653d536cf6b848af107a3109e32cae989f9f7d00 .githooks/pre-commit
-          922b847eabcda1d62abe52d630cd421d369f54d06ffade2ae0dca154c7f25274 .github/workflows/adlc.yml
-          bbc49494b0fc8d03a74a6f54c909c8c354acc2620c8eb7236a75d8a896bb3535 .github/workflows/adlc-review.yml
+          c31ef4e04e0bc7449f2590dc880d40a095ec05f10c3a213d3a1751c5780292d2 .github/workflows/adlc.yml
+          1b05523ed7b6168f1a4e39849733a9c8fac83db3ccad84acb5d610e12e2accd2 .github/workflows/adlc-review.yml
           5c880d74d8c162480f361529339c810e13b373f1d4aa479ab7a07c27a6586d4a .github/workflows/adlc-pr-title.yml
           9d3dd68c59b7435fc25184e763858e3fb72627e65a28e91b8596218e1ce39653 .github/workflows/adlc-dependabot.yml
           1c526d4650b0ac9a30b77d93dd65a54ce5fd65ce609ae93379e9189d67c3cfab .github/pull_request_template.md
@@ -169,22 +181,34 @@ jobs:
           if [ ! -f DESIGN.md ]; then echo "No DESIGN.md; skipping."; exit 0; fi
           npx --yes @google/design.md@0.4.0 lint DESIGN.md
 
+  # The owner's approval: the adlc:t3-approved label, added last by the owner's account after the
+  # latest commit reached GitHub, or an approving review of the latest commit. GitHub does not let
+  # a PR's author approve it, so the label also works on PRs opened from the owner's account.
+  # Runs even when tier fails, because a skipped required check counts as passed.
   t3-approval:
     needs: tier
-    if: github.event.pull_request.user.login != 'dependabot[bot]'
+    if: ${{ !cancelled() && github.event.pull_request.user.login != 'dependabot[bot]' }}
     runs-on: ubuntu-latest
     steps:
+      - if: needs.tier.result != 'success'
+        run: |
+          echo "The tier job did not pass, so the T3 approval cannot be checked." >&2
+          exit 1
       - if: needs.tier.outputs.tier == 'T3'
+        uses: actions/checkout@v7
+      # The commit reached GitHub when its first check suite was created. A label older than that
+      # approved an earlier commit.
+      - if: needs.tier.outputs.tier == 'T3'
+        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           PR: ${{ github.event.pull_request.number }}
           HEAD: ${{ github.event.pull_request.head.sha }}
           OWNER: ${{ inputs.owner }}
         run: |
-          approved=$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR/reviews" | jq -s 'add' \
-            | jq --arg o "$OWNER" --arg h "$HEAD" \
-              '[.[] | select((.user.login|ascii_downcase)==($o|ascii_downcase) and .state=="APPROVED" and .commit_id==$h)] | length')
-          if [ "$approved" -eq 0 ]; then
-            echo "T3 change: needs an approval from $OWNER on commit $HEAD." >&2
-            exit 1
-          fi
+          gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR/reviews" | jq -s 'add // []' > "$RUNNER_TEMP/reviews.json"
+          gh api --paginate "repos/$GITHUB_REPOSITORY/issues/$PR/events" | jq -s 'add // []' > "$RUNNER_TEMP/events.json"
+          since=$(gh api "repos/$GITHUB_REPOSITORY/commits/$HEAD/check-suites?per_page=100" \
+            --jq '[.check_suites[].created_at] | min // ""')
+          python3 -I .adlc/scripts/adlc.py t3-approved --owner "$OWNER" --head "$HEAD" --since "$since" \
+            --reviews "$RUNNER_TEMP/reviews.json" --events "$RUNNER_TEMP/events.json"

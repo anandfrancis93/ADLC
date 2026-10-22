@@ -18,6 +18,18 @@ The T3 default is broad on purpose: start strict and loosen with evidence.
 CI workflow files are always T3, except in Dependabot PRs: patch and minor updates are T1 and
 major updates T2, whatever files they touch ([toolchain.md](toolchain.md)).
 
+## T3 approval
+
+The `t3-approval` check passes when the owner (the `ADLC_OWNER` variable) did one of these:
+
+- Added the `adlc:t3-approved` label after the latest commit, and no one changed that label since.
+  CI also removes the label after each new commit.
+- Approved the latest commit in a review.
+
+GitHub does not let a PR's author approve it
+([GitHub docs](https://docs.github.com/en/pull-requests/how-tos/review-pull-requests/approving-a-pull-request-with-required-reviews)).
+Use the label on PRs opened from the owner's account.
+
 ## `.adlc/tiers` format
 
 One rule per line: a tier, a space, a path glob. `#` starts a comment.

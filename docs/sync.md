@@ -1,7 +1,7 @@
 # Keeping repos in sync
 
 Each repo pins one ADLC release. CI fails a PR when the repo's copy of the ADLC differs
-from that release. After each release, a check finds the repos behind it.
+from that release. Each new release opens a sync PR in every repo behind it.
 
 ## How it works
 
@@ -11,8 +11,10 @@ from that release. After each release, a check finds the repos behind it.
 - `.adlc/version` records the release the repo is on.
 - The `drift` job fails a PR when a managed file differs from the pinned release.
   It compares SHA-256 hashes written into the shared `adlc.yml`, so a repo cannot edit them.
-- Review events run a separate caller, `adlc-review.yml`, with only `tier`, `t3-approval` and `review-budget`.
-  A job skipped on a review run would report success under its check name, and hide a failure.
+- Review and label events run a separate caller, `adlc-review.yml`, with only `tier`, `t3-approval` and `review-budget`.
+  A job skipped on those runs would report success under its check name, and hide a failure.
+- A release tag starts `.github/workflows/sync-repos.yml` in this repo.
+  It opens a sync PR in each repo on an older release.
 
 Managed files belong to the ADLC. Every sync overwrites them, and the repo never edits them:
 
@@ -38,6 +40,28 @@ Settings > Actions > General > Access > "Accessible from repositories owned by '
 A public repo can call only public workflows
 ([GitHub docs](https://docs.github.com/en/actions/reference/workflows-and-actions/reusing-workflow-configurations)).
 A public repo can use the ADLC's shared CI only after this repo is made public.
+
+The sync PRs need a token. The built-in workflow token works only in the repo that runs the workflow
+([GitHub docs](https://docs.github.com/en/actions/concepts/security/github_token)). Create a fine-grained token once:
+
+1. Open [this prefilled form](https://github.com/settings/personal-access-tokens/new?name=ADLC+sync&description=Opens+ADLC+sync+PRs+from+the+ADLC+release+workflow&target_name=anandfrancis93&expires_in=366&contents=write&pull_requests=write&workflows=write).
+   It sets Contents, Pull requests and Workflows to write, and an expiry of 366 days.
+2. Under Repository access, pick "All repositories". The form cannot prefill this choice.
+3. Generate the token, and copy it.
+4. In this repo: Settings > Secrets and variables > Actions > New repository secret.
+   Name it `ADLC_SYNC_TOKEN`, paste the token, and save.
+5. Add the secret before pushing the next release tag. That tag starts the first run.
+
+A repository secret is open to every workflow in this repo, on any branch. So anyone who can push a branch here
+can use the token on every repo it reaches. GitHub Pro and Team can limit an environment secret to `v*` tags
+([GitHub docs](https://docs.github.com/en/actions/reference/workflows-and-actions/deployments-and-environments)).
+That also needs `environment:` on the `sync-repos` job, which this repo does not set yet.
+
+To run it again: Actions > ADLC sync repos > Run workflow, then pick the release tag.
+The box "List what it would do, and open no PRs" starts checked. Clear it to open PRs.
+
+The token expires after 366 days. The first release after that fails its sync run. Make a new token then.
+([GitHub docs](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens))
 
 ## Adopt the ADLC or update a repo
 
@@ -84,19 +108,26 @@ GitHub copies only its files into a new repo, not its settings. To set one up:
 2. Mark it as a template: `gh repo edit anandfrancis93/adlc-template --template`.
 3. Start a new repo from it: `gh repo create anandfrancis93/NAME --private --template anandfrancis93/adlc-template --clone`.
 
-The release check covers the template repo like any other repo.
+Release sync PRs cover the template repo like any other repo.
 
 ## After each ADLC release
 
-Run this check right after pushing the release tag. A weekly run of the same check catches anything missed.
+Pushing a release tag starts the `ADLC sync repos` workflow. For each of the owner's repos, it reads
+`.adlc/version` on the default branch:
 
-1. It reads the latest release: `gh release view -R anandfrancis93/ADLC --json tagName -q .tagName`.
-2. It reads `.adlc/version` on each repo's default branch.
-   A repo with `.adlc/tiers` but no `.adlc/version` was set up by copying, before sync existed.
-   A repo with neither file does not use the ADLC, and the check skips it.
-3. It lists each repo behind the latest release, with both versions.
-   Each listed repo gets a sync PR, made as in "Adopt the ADLC or update a repo".
-4. A repo it cannot read is a failed check, not "up to date".
+- A repo on the new release needs nothing.
+- A repo on an older release gets a PR titled `chore(adlc): sync to X.Y.Z`, from branch `adlc/sync-X.Y.Z`.
+  The PR body lists the changed files and the changelog entries since the repo's version.
+  If an open PR from that branch exists, the workflow leaves it.
+- A repo with `.adlc/tiers` but no `.adlc/version` was set up by copying, before sync existed.
+  The workflow lists it, and opens no PR. Do its first sync by hand, as in "First sync of a repo set up by copying".
+- A repo with neither file does not use the ADLC. The workflow leaves it out.
+- A repo the workflow cannot read is a failure. The run fails, so a failure is never read as "up to date".
+
+The run's summary lists each repo and what happened.
+
+A sync PR changes CI files, so it is T3. Before merging, do what each **Breaking** line in its body asks.
+It then needs the owner's approval like any T3 PR ([T3 approval](risk-tiers.md#t3-approval)).
 
 Dependabot does not bump the ADLC tag in callers. The template's `.github/dependabot.yml` ignores
 `anandfrancis93/ADLC*`, for two reasons:
@@ -118,3 +149,5 @@ Dependabot does not bump the ADLC tag in callers. The template's `.github/depend
 - Sync does not copy skills. Claude Code users get them from the plugin. Other tools copy `skills/` again.
 - Sync never deletes a file. When a release stops managing a file, its changelog says to delete it.
 - A caller must pin a release tag. A branch or commit pin fails `drift`.
+- The workflow sees only the repos the token can read. A repo outside the token's access gets no sync PR.
+- It skips forks and archived repos, and reads at most 1000 repos.

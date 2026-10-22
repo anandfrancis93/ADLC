@@ -7,6 +7,9 @@ Repos get a copy at .adlc/scripts/adlc.py from `sync`. Edit it only in the ADLC 
   adlc.py protected-changes --base SHA --head SHA [--list FILE]
                                           CI: fail if a PR commit edits a path its parent commit protects
   adlc.py review-rounds --reviewers A,B   count review rounds in `gh api .../reviews` JSON on stdin
+  adlc.py t3-approved --owner LOGIN --head SHA --since TIME --reviews FILE --events FILE
+                                          CI: pass if the owner approved commit SHA, or added the
+                                          adlc:t3-approved label last and after TIME (`gh api` JSON)
   adlc.py pr-title TITLE                  check a PR title against Conventional Commits 1.0.0
   adlc.py changelog-draft --current X.Y.Z --repo OWNER/NAME
                                           next SemVer version and a Common Changelog draft from
@@ -17,8 +20,12 @@ Repos get a copy at .adlc/scripts/adlc.py from `sync`. Edit it only in the ADLC 
                                           from an ADLC checkout at a release tag: write the ADLC's files
                                           into the repo at TARGET (see docs/sync.md)
   adlc.py manifest [--write | --check]    in the ADLC repo: the hashes the drift job in adlc.yml compares
+  adlc.py sync-repos --owner OWNER [--skip OWNER/NAME] [--dry-run]
+                                          from an ADLC checkout at a release tag: open a sync PR in each
+                                          of OWNER's repos on an older release (needs GH_TOKEN)
 """
 import argparse
+import base64
 import datetime
 import hashlib
 import json
@@ -26,6 +33,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 
 TIERS = ("T1", "T2", "T3")
 DEFAULT_TIER = "T2"
@@ -213,6 +221,47 @@ def cmd_review_rounds(args):
 
 
 # Conventional Commits 1.0.0 header: type, optional (scope), optional !, colon, space, description.
+T3_LABEL = "adlc:t3-approved"
+
+
+def utc(stamp):
+    return datetime.datetime.fromisoformat(stamp.replace("Z", "+00:00")) if stamp else None
+
+
+def t3_approval(owner, head, since, reviews, events):
+    """How the owner approved the PR at commit head, or None. The label counts only when the owner
+    added it last, after since: the time commit head reached GitHub."""
+    owner = owner.strip().lower()
+    if not owner:
+        return None
+    for r in reviews:
+        if (r.get("user") or {}).get("login", "").lower() == owner and r.get("state") == "APPROVED" \
+                and r.get("commit_id") == head:
+            return f"{owner} approved commit {head}"
+    last = None
+    for e in sorted(events, key=lambda e: (e.get("created_at") or "", e.get("id") or 0)):
+        if e.get("event") in ("labeled", "unlabeled") and (e.get("label") or {}).get("name") == T3_LABEL:
+            last = e
+    if last and last["event"] == "labeled" and (last.get("actor") or {}).get("login", "").lower() == owner \
+            and since and last.get("created_at") and utc(last["created_at"]) > utc(since):
+        return f"{owner} added the {T3_LABEL} label after commit {head}"
+    return None
+
+
+def cmd_t3_approved(args):
+    with open(args.reviews, encoding="utf-8") as f:
+        reviews = json.load(f) or []
+    with open(args.events, encoding="utf-8") as f:
+        events = json.load(f) or []
+    how = t3_approval(args.owner, args.head, args.since, reviews, events)
+    if not how:
+        print(f"T3 change: needs the {T3_LABEL} label from {args.owner or 'ADLC_OWNER (not set)'} after "
+              f"commit {args.head}, or an approval of that commit.", file=sys.stderr)
+        return 1
+    print(f"T3 approved: {how}.")
+    return 0
+
+
 TITLE_RE = re.compile(r"^(?P<type>[A-Za-z]+)(?:\((?P<scope>[^()]+)\))?(?P<bang>!)?: (?P<desc>\S.*)$")
 # feat and fix come from the spec; the rest are the commitlint config-conventional types it cites.
 TYPES = ("feat", "fix", "build", "chore", "ci", "docs", "perf", "refactor", "revert", "style", "test")
@@ -297,23 +346,32 @@ def cmd_changelog_draft(args):
     return 0
 
 
-def cmd_changelog_entry(args):
-    version = args.version[1:] if args.version.startswith("v") else args.version
-    heading = re.compile(r"^## \[?" + re.escape(version) + r"\]? - \d{4}-\d{2}-\d{2}")
-    lines, inside = [], False
-    with open(args.file, encoding="utf-8") as f:
+ENTRY_RE = re.compile(r"^## \[?(\d+\.\d+\.\d+)\]? - \d{4}-\d{2}-\d{2}")
+
+
+def changelog_entries(path):
+    """{version: text} for each '## [X.Y.Z] - YYYY-MM-DD' entry, without its heading or link lines."""
+    entries, current = {}, None
+    with open(path, encoding="utf-8") as f:
         for line in f:
             if line.startswith("## ") or re.match(r"^\[[^\]]+\]: ", line):
-                if inside:
-                    break
-                inside = bool(heading.match(line))
+                m = ENTRY_RE.match(line)
+                current = m.group(1) if m and m.group(1) not in entries else None
+                if current:
+                    entries[current] = []
                 continue
-            if inside:
-                lines.append(line.rstrip("\n"))
-    if not inside:
+            if current:
+                entries[current].append(line.rstrip("\n"))
+    return {version: "\n".join(lines).strip() for version, lines in entries.items()}
+
+
+def cmd_changelog_entry(args):
+    version = args.version[1:] if args.version.startswith("v") else args.version
+    entries = changelog_entries(args.file)
+    if version not in entries:
         print(f"ADLC: {args.file} has no '## {version} - YYYY-MM-DD' entry. Write it before tagging.", file=sys.stderr)
         return 1
-    print("\n".join(lines).strip())
+    print(entries[version])
     return 0
 
 
@@ -426,14 +484,9 @@ def check_release_checkout(root, version):
                  "Sync from a release: git checkout vX.Y.Z (see docs/sync.md).")
 
 
-def cmd_sync(args):
-    root = adlc_root()
-    version = adlc_version(root)
-    check_release_checkout(root, version)
-    target = os.path.abspath(args.target)
-    if not os.path.isdir(target):
-        sys.exit(f"adlc.py: {target} is not a directory.")
-    releases = args.releases or os.path.exists(os.path.join(target, MANAGED_RELEASES[0][0]))
+def sync_files(root, version, target, releases, check):
+    """Write the release's files into target. Returns (version before, changes such as 'add PATH')."""
+    releases = releases or os.path.exists(os.path.join(target, MANAGED_RELEASES[0][0]))
     managed = MANAGED + (MANAGED_RELEASES if releases else ())
     seeds = SEEDS + (SEEDS_RELEASES if releases else ())
     before = "none"
@@ -453,12 +506,23 @@ def cmd_sync(args):
             if same and bool(os.stat(dest).st_mode & 0o100) == executable:
                 continue
         changes.append(f"{'update' if exists else 'add'} {path}")
-        if args.check:
+        if check:
             continue
         os.makedirs(os.path.dirname(dest) or ".", exist_ok=True)
         with open(dest, "wb") as f:
             f.write(data)
         os.chmod(dest, 0o755 if executable else 0o644)
+    return before, changes
+
+
+def cmd_sync(args):
+    root = adlc_root()
+    version = adlc_version(root)
+    check_release_checkout(root, version)
+    target = os.path.abspath(args.target)
+    if not os.path.isdir(target):
+        sys.exit(f"adlc.py: {target} is not a directory.")
+    before, changes = sync_files(root, version, target, args.releases, args.check)
     for change in changes:
         print(("would " if args.check else "") + change)
     if args.check:
@@ -469,6 +533,132 @@ def cmd_sync(args):
             print("ADLC: could not set core.hooksPath; run: git config core.hooksPath .githooks", file=sys.stderr)
     print(f"ADLC {before} -> {version}: {len(changes)} file(s) changed.", file=sys.stderr)
     return 0
+
+
+def gh(*args):
+    """Run the GitHub CLI, which reads GH_TOKEN. Returns (exit code, stdout, stderr)."""
+    p = subprocess.run(["gh", *args], capture_output=True, text=True)
+    return p.returncode, p.stdout, p.stderr
+
+
+def git_env():
+    """Environment for git that sends GH_TOKEN to github.com the way actions/checkout does,
+    so the token never appears in a URL or on a command line."""
+    env = dict(os.environ, GIT_TERMINAL_PROMPT="0")
+    n = int(env.get("GIT_CONFIG_COUNT", "0"))
+    auth = base64.b64encode(f"x-access-token:{env['GH_TOKEN']}".encode()).decode()
+    env[f"GIT_CONFIG_KEY_{n}"] = "http.https://github.com/.extraheader"
+    env[f"GIT_CONFIG_VALUE_{n}"] = f"AUTHORIZATION: basic {auth}"
+    env["GIT_CONFIG_COUNT"] = str(n + 1)
+    return env
+
+
+def run_git(env, *args):
+    p = subprocess.run(["git", *args], env=env, capture_output=True, text=True)
+    if p.returncode != 0:
+        raise RuntimeError(f"git {args[0] if args[0] != '-C' else args[2]} failed: {p.stderr.strip()}")
+
+
+def read_repo_file(repo, path):
+    """A file's text on the repo's default branch, or None if it is missing."""
+    code, out, err = gh("api", f"repos/{repo}/contents/{path}", "-H", "Accept: application/vnd.github.raw")
+    if code == 0:
+        return out
+    if "HTTP 404" in err:
+        return None
+    raise RuntimeError(f"could not read {path}: {err.strip()}")
+
+
+def semver(text):
+    m = SEMVER_RE.match(text.strip())
+    return tuple(int(n) for n in m.groups()) if m else None
+
+
+def sync_pr_body(root, before, version, changes):
+    path = os.path.join(root, "CHANGELOG.md")
+    entries = changelog_entries(path) if os.path.isfile(path) else {}
+    old, new = semver(before) or (0, 0, 0), semver(version)
+    shown = sorted((v for v in entries if semver(v) and old < semver(v) <= new), key=semver, reverse=True)
+    lines = [f"Syncs this repo from ADLC {before} to {version}. The ADLC release workflow opened this PR.", ""]
+    if any("**Breaking:**" in entries[v] for v in shown):
+        lines += ["Before merging, do what each **Breaking** line below asks, in this PR.", ""]
+    lines += ["Files `adlc.py sync` changed:", ""] + [f"- {c}" for c in changes] + [""]
+    for v in shown:
+        lines += [f"## ADLC {v}", "", entries[v], ""]
+    return "\n".join(lines)
+
+
+def sync_repo(root, version, repo, base, dry_run):
+    """Open a sync PR in one repo if it is on an older release. Returns its report line,
+    or None for a repo that does not use the ADLC. Raises RuntimeError when a step fails."""
+    recorded = read_repo_file(repo, ".adlc/version")
+    if recorded is None:
+        if read_repo_file(repo, ".adlc/tiers") is None:
+            return None
+        return "not synced yet: sync it once by hand (docs/sync.md)"
+    current = recorded.strip()
+    if semver(current) is None:
+        raise RuntimeError(f".adlc/version is {current!r}, not X.Y.Z")
+    if semver(current) >= semver(version):
+        return f"on {current}"
+    branch = f"adlc/sync-{version}"
+    code, out, err = gh("pr", "list", "-R", repo, "--head", branch, "--state", "open", "--json", "url")
+    if code != 0:
+        raise RuntimeError(f"could not list PRs: {err.strip()}")
+    if json.loads(out):
+        return f"on {current}; sync PR already open: {json.loads(out)[0]['url']}"
+    if dry_run:
+        return f"on {current}; would open a PR to sync to {version}"
+    env = git_env()
+    with tempfile.TemporaryDirectory() as tmp:
+        work = os.path.join(tmp, "repo")
+        run_git(env, "clone", "-q", "--depth", "1", f"https://github.com/{repo}", work)
+        run_git(env, "-C", work, "checkout", "-q", "-b", branch)
+        before, changes = sync_files(root, version, work, False, False)
+        run_git(env, "-C", work, "add", "-A")
+        run_git(env, "-C", work, "-c", "user.name=github-actions[bot]", "-c",
+                "user.email=41898282+github-actions[bot]@users.noreply.github.com", "-c", "commit.gpgsign=false",
+                "commit", "-q", "-m", f"chore(adlc): sync to {version}")
+        run_git(env, "-C", work, "push", "-q", "--force", "origin", branch)
+        body = os.path.join(tmp, "body.md")
+        with open(body, "w", encoding="utf-8") as f:
+            f.write(sync_pr_body(root, before, version, changes))
+        create = ["pr", "create", "-R", repo, "--head", branch, "--title", f"chore(adlc): sync to {version}",
+                  "--body-file", body] + (["--base", base] if base else [])
+        code, out, err = gh(*create)
+        if code != 0:
+            raise RuntimeError(f"could not open the PR: {err.strip()}")
+    return f"on {current}; opened {out.strip()}"
+
+
+def cmd_sync_repos(args):
+    root = adlc_root()
+    version = adlc_version(root)
+    check_release_checkout(root, version)
+    if not os.environ.get("GH_TOKEN"):
+        sys.exit("adlc.py: set GH_TOKEN to a token that can open PRs in the owner's repos (docs/sync.md).")
+    code, out, err = gh("repo", "list", args.owner, "--no-archived", "--source", "--limit", "1000",
+                        "--json", "nameWithOwner,defaultBranchRef")
+    if code != 0:
+        sys.exit(f"adlc.py: could not list {args.owner}'s repos: {err.strip()}")
+    skip = {name.lower() for name in args.skip}
+    lines, failed = [], 0
+    for r in sorted(json.loads(out), key=lambda r: r["nameWithOwner"].lower()):
+        repo = r["nameWithOwner"]
+        if repo.lower() in skip:
+            continue
+        try:
+            line = sync_repo(root, version, repo, (r.get("defaultBranchRef") or {}).get("name"), args.dry_run)
+        except (RuntimeError, ValueError, OSError) as e:
+            line, failed = f"failed: {e}", failed + 1
+        if line:
+            lines.append(f"- {repo}: {line}")
+    report = "\n".join([f"ADLC {version}: repos that use the ADLC", ""] + (lines or ["- none"]))
+    print(report)
+    if os.environ.get("GITHUB_STEP_SUMMARY"):
+        with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as f:
+            f.write(report + "\n")
+    return 1 if failed else 0
 
 
 def main():
@@ -486,6 +676,12 @@ def main():
     pc.add_argument("--list", default=".adlc/protected")
     r = sub.add_parser("review-rounds")
     r.add_argument("--reviewers", required=True)
+    ta = sub.add_parser("t3-approved")
+    ta.add_argument("--owner", required=True)
+    ta.add_argument("--head", required=True)
+    ta.add_argument("--since", default="")
+    ta.add_argument("--reviews", required=True)
+    ta.add_argument("--events", required=True)
     pt = sub.add_parser("pr-title")
     pt.add_argument("title")
     cd = sub.add_parser("changelog-draft")
@@ -503,17 +699,23 @@ def main():
     mode = m.add_mutually_exclusive_group()
     mode.add_argument("--write", action="store_true")
     mode.add_argument("--check", action="store_true")
+    sr = sub.add_parser("sync-repos")
+    sr.add_argument("--owner", required=True)
+    sr.add_argument("--skip", action="append", default=[])
+    sr.add_argument("--dry-run", action="store_true")
     args = p.parse_args()
     return {
         "tier": cmd_tier,
         "check-protected": cmd_check_protected,
         "protected-changes": cmd_protected_changes,
         "review-rounds": cmd_review_rounds,
+        "t3-approved": cmd_t3_approved,
         "pr-title": cmd_pr_title,
         "changelog-draft": cmd_changelog_draft,
         "changelog-entry": cmd_changelog_entry,
         "sync": cmd_sync,
         "manifest": cmd_manifest,
+        "sync-repos": cmd_sync_repos,
     }[args.cmd](args)
 
 

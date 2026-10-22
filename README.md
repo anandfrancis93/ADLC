@@ -42,7 +42,7 @@ Sources and what each contributed: [docs/sources.md](docs/sources.md).
 5. Skills: Claude Code users install the plugin (below). For other tools, copy
    `skills/*` into that tool's skills directory.
 
-CI fails a PR that edits a file the ADLC manages. Updates arrive as sync PRs ([sync](docs/sync.md)).
+CI fails a PR that edits a file the ADLC manages. Each release opens a sync PR in every repo behind it ([sync](docs/sync.md)).
 
 ## Versions
 

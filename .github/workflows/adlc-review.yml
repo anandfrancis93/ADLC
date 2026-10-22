@@ -1,6 +1,6 @@
-# ADLC checks on pull_request_review, shared. Repos call this workflow from the
+# ADLC checks on reviews and label changes, shared. Repos call this workflow from the
 # .github/workflows/adlc-review.yml that `adlc.py sync` writes. See docs/sync.md.
-# It re-checks the T3 approval after a review and counts agent review rounds.
+# It re-checks the T3 approval after a review or a label change, and counts agent review rounds.
 # The caller's job id is "adlc" in both callers, so t3-approval here reports under the
 # same check name as in adlc.yml. The other required checks run only in adlc.yml.
 name: ADLC review
@@ -21,6 +21,7 @@ permissions:
   contents: read
   pull-requests: write
   issues: write
+  checks: read
 
 jobs:
   tier:
@@ -46,7 +47,7 @@ jobs:
           PR: ${{ github.event.pull_request.number }}
           TIER: ${{ steps.tier.outputs.tier }}
         run: |
-          for t in T1 T2 T3; do gh label create "adlc:$t" --force >/dev/null; done
+          for t in T1 T2 T3 t3-approved; do gh label create "adlc:$t" --force >/dev/null; done
           gh pr edit "$PR" --remove-label adlc:T1,adlc:T2,adlc:T3 --add-label "adlc:$TIER"
 
   review-budget:
@@ -67,22 +68,34 @@ jobs:
             gh pr edit "$PR" --add-label adlc:owner-decides
           fi
 
+  # The owner's approval: the adlc:t3-approved label, added last by the owner's account, or an
+  # approving review of the latest commit. GitHub does not let a PR's author approve it, so the
+  # label also works on PRs opened from the owner's account. Runs even when tier fails, because
+  # a skipped required check counts as passed.
   t3-approval:
     needs: tier
-    if: github.event.pull_request.user.login != 'dependabot[bot]'
+    if: ${{ !cancelled() && github.event.pull_request.user.login != 'dependabot[bot]' }}
     runs-on: ubuntu-latest
     steps:
+      - if: needs.tier.result != 'success'
+        run: |
+          echo "The tier job did not pass, so the T3 approval cannot be checked." >&2
+          exit 1
       - if: needs.tier.outputs.tier == 'T3'
+        uses: actions/checkout@v7
+      # The commit reached GitHub when its first check suite was created. A label older than that
+      # approved an earlier commit.
+      - if: needs.tier.outputs.tier == 'T3'
+        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           PR: ${{ github.event.pull_request.number }}
           HEAD: ${{ github.event.pull_request.head.sha }}
           OWNER: ${{ inputs.owner }}
         run: |
-          approved=$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR/reviews" | jq -s 'add' \
-            | jq --arg o "$OWNER" --arg h "$HEAD" \
-              '[.[] | select((.user.login|ascii_downcase)==($o|ascii_downcase) and .state=="APPROVED" and .commit_id==$h)] | length')
-          if [ "$approved" -eq 0 ]; then
-            echo "T3 change: needs an approval from $OWNER on commit $HEAD." >&2
-            exit 1
-          fi
+          gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR/reviews" | jq -s 'add // []' > "$RUNNER_TEMP/reviews.json"
+          gh api --paginate "repos/$GITHUB_REPOSITORY/issues/$PR/events" | jq -s 'add // []' > "$RUNNER_TEMP/events.json"
+          since=$(gh api "repos/$GITHUB_REPOSITORY/commits/$HEAD/check-suites?per_page=100" \
+            --jq '[.check_suites[].created_at] | min // ""')
+          python3 -I .adlc/scripts/adlc.py t3-approved --owner "$OWNER" --head "$HEAD" --since "$since" \
+            --reviews "$RUNNER_TEMP/reviews.json" --events "$RUNNER_TEMP/events.json"

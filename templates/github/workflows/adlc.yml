@@ -49,6 +49,16 @@ jobs:
       - uses: actions/checkout@v4
       - run: .adlc/full-test
 
+  # Only for repos with a DESIGN.md at the root. The format is alpha, so the CLI version is pinned.
+  design-md:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          if [ ! -f DESIGN.md ]; then echo "No DESIGN.md; skipping."; exit 0; fi
+          npx --yes @google/design.md@0.4.0 lint DESIGN.md
+
   review-budget:
     if: github.event_name == 'pull_request_review' && vars.ADLC_REVIEWERS != ''
     runs-on: ubuntu-latest

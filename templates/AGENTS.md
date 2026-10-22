@@ -8,6 +8,10 @@ Keep this file under 60 lines. Facts only; process lives in the ADLC skills, hoo
 - Fast check (pre-commit, staged files): see `.adlc/fast-check`
 - Full test suite (CI only): <command>
 
+## Releases
+- Ships versioned releases: <yes, version in <file> | no>
+- DESIGN.md: <yes | no>
+
 ## Risk tiers
 Path-to-tier map: `.adlc/tiers`. Protected paths: `.adlc/protected`.
 

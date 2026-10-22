@@ -1,0 +1,23 @@
+# ADLC release. Only for repos that ship versioned releases. Copy to .github/workflows/adlc-release.yml.
+# Pushing tag vX.Y.Z creates a GitHub release whose notes are that version's CHANGELOG.md entry.
+# Fails if the entry is missing, so the entry must be committed before the tag.
+name: ADLC release
+
+on:
+  push:
+    tags: ['v[0-9]*.[0-9]*.[0-9]*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          python3 .adlc/scripts/adlc.py changelog-entry "$TAG" > notes.md
+          gh release create "$TAG" --title "$TAG" --notes-file notes.md --verify-tag

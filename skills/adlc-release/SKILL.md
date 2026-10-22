@@ -10,3 +10,5 @@ description: Decide whether an ADLC pull request may merge, by tier. Use when a 
    If the repo deploys, ship behind a feature flag or staged rollout, and confirm the rollback command works.
 4. If the PR has `adlc:owner-decides`, do not push more fixes. Summarize the open
    findings for the owner, who merges or closes it.
+5. Merge with squash; the commit title is the PR title. Versioned releases are a separate
+   step: use the `adlc-version` skill.

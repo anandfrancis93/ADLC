@@ -1,0 +1,20 @@
+# ADLC PR title check. Copy to .github/workflows/adlc-pr-title.yml.
+# Separate from adlc.yml so that editing a title never re-runs the full suite.
+# Make "pr-title" a required check. PRs are squash-merged, so the title becomes the commit on main.
+name: ADLC PR title
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+
+permissions:
+  contents: read
+
+jobs:
+  pr-title:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: python3 .adlc/scripts/adlc.py pr-title "$TITLE"

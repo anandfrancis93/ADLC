@@ -1,6 +1,6 @@
 # Sources
 
-All four were read in full on 21 Oct 2026.
+The four lifecycle sources were read in full on 21 Oct 2026.
 
 | Source | What the ADLC takes from it |
 | --- | --- |
@@ -12,3 +12,14 @@ All four were read in full on 21 Oct 2026.
 No source gives guidance on retiring rules or checks. The Retire stage extends
 the playbook's monthly review tuning and its advice to replace evals that stop
 discriminating.
+
+## Conventions (read in full on 22 Oct 2026)
+
+| Source | What the ADLC takes from it |
+| --- | --- |
+| [Conventional Commits 1.0.0](https://www.conventionalcommits.org/en/v1.0.0/) | PR title format; `feat`/`fix`/`!` map to SemVer MINOR/PATCH/MAJOR; squash workflow (FAQ) |
+| [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html) | Version numbers, declared public API, start at 0.1.0, released versions never change, `v` only in tags |
+| [Common Changelog](https://common-changelog.org/) | CHANGELOG.md format, written at release time, no Unreleased section, commit and PR references, `**Breaking:**` prefix. Its section 4.2 calls Conventional Commits an antipattern; see [commits-and-releases.md](commits-and-releases.md) |
+| [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/) | Common Changelog's parent. Read to compare; the ADLC follows the stricter Common Changelog |
+| [DESIGN.md](https://github.com/google-labs-code/design.md), Google Labs, Apache 2.0, format version alpha | Optional design file for UI repos and its `lint` command |
+| [Version your app](https://developer.android.com/studio/publish/versioning), Android Developers | `versionCode` must increase per release; `versionName` is a free string shown to users |

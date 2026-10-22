@@ -105,3 +105,73 @@ class ReviewRounds(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PrTitle(unittest.TestCase):
+    def ok(self, title):
+        return run(["pr-title", title])[0] == 0
+
+    def test_valid_titles(self):
+        for t in ("feat: add login", "fix(api): reject empty names", "feat!: drop node 18",
+                  "refactor(core)!: split parser", "Docs: fix typo", "revert: undo x"):
+            self.assertTrue(self.ok(t), t)
+
+    def test_invalid_titles(self):
+        for t in ("Add login", "feat:add login", "feat : add login", "feature: add login",
+                  "fix(): empty scope", "feat: ", "fix(api) reject"):
+            self.assertFalse(self.ok(t), t)
+
+
+class ChangelogDraft(unittest.TestCase):
+    def draft(self, commits, current="0.1.0"):
+        log = "".join(f"{sha}\x1f{subject}\x1f{body}\x1e\n" for sha, subject, body in commits)
+        return run(["changelog-draft", "--current", current, "--repo", "o/n", "--date", "2026-10-22"], stdin=log)
+
+    def test_feat_bumps_minor_and_groups(self):
+        code, out, _ = self.draft([
+            ("bbb2222", "fix: handle empty map (#4)", ""),
+            ("aaa1111", "feat(cli): add tier explain", ""),
+            ("ccc3333", "docs: reword readme", ""),
+        ])
+        self.assertEqual(code, 0)
+        self.assertTrue(out.startswith("## [0.2.0] - 2026-10-22"))
+        self.assertIn("### Added\n\n- Add tier explain ([`aaa1111`](https://github.com/o/n/commit/aaa1111))", out)
+        self.assertIn("- Handle empty map ([`bbb2222`](https://github.com/o/n/commit/bbb2222)) "
+                      "([#4](https://github.com/o/n/pull/4))", out)
+        self.assertLess(out.index("### Added"), out.index("### Fixed"))
+        self.assertIn("ccc3333 docs: reword readme", out.split("<!--")[1])
+
+    def test_breaking_bumps_major_and_comes_first(self):
+        code, out, _ = self.draft([
+            ("aaa1111", "perf: faster tiering", ""),
+            ("bbb2222", "feat: new map format", "Body.\n\nBREAKING CHANGE: old maps fail"),
+        ], current="1.4.2")
+        self.assertTrue(out.startswith("## [2.0.0]"))
+        changed = out.split("### Changed\n\n")[1].splitlines()
+        self.assertTrue(changed[0].startswith("- **Breaking:** new map format"))
+        self.assertTrue(changed[1].startswith("- Faster tiering"))
+
+    def test_fix_only_bumps_patch(self):
+        self.assertTrue(self.draft([("a1", "fix: x", "")], current="v1.2.3")[1].startswith("## [1.2.4]"))
+
+    def test_nothing_user_facing_exits_3(self):
+        self.assertEqual(self.draft([("a1", "ci: cache deps", "")])[0], 3)
+
+    def test_bad_current_version_fails(self):
+        self.assertNotEqual(self.draft([("a1", "fix: x", "")], current="1.2")[0], 0)
+
+
+class ChangelogEntry(unittest.TestCase):
+    def setUp(self):
+        self.f = os.path.join(tempfile.mkdtemp(), "CHANGELOG.md")
+        with open(self.f, "w") as fh:
+            fh.write("# Changelog\n\n## [0.2.0] - 2026-10-22\n\n### Added\n\n- Add x ([`a1`](u))\n\n"
+                     "## [0.1.0] - 2026-10-21\n\n_First release._\n\n[0.2.0]: https://x/v0.2.0\n[0.1.0]: https://x/v0.1.0\n")
+
+    def test_prints_entry_without_heading_or_links(self):
+        code, out, _ = run(["changelog-entry", "v0.2.0", "--file", self.f])
+        self.assertEqual((code, out), (0, "### Added\n\n- Add x ([`a1`](u))"))
+        self.assertEqual(run(["changelog-entry", "0.1.0", "--file", self.f])[1], "_First release._")
+
+    def test_missing_entry_fails(self):
+        self.assertEqual(run(["changelog-entry", "0.3.0", "--file", self.f])[0], 1)

@@ -20,7 +20,9 @@ Claude Code users also get an optional plugin.
 | 8 | Retire | Removes code, and rules or checks that cost more than they give |
 
 Details: [docs/stages.md](docs/stages.md), [docs/risk-tiers.md](docs/risk-tiers.md),
-[docs/review-budget.md](docs/review-budget.md), [docs/retire.md](docs/retire.md).
+[docs/review-budget.md](docs/review-budget.md), [docs/retire.md](docs/retire.md),
+[docs/commits-and-releases.md](docs/commits-and-releases.md) (Conventional Commits, SemVer,
+Common Changelog), [docs/design-md.md](docs/design-md.md) (optional, repos with a UI).
 Sources and what each contributed: [docs/sources.md](docs/sources.md).
 
 ## Adopt it in a repo
@@ -29,11 +31,20 @@ Sources and what each contributed: [docs/sources.md](docs/sources.md).
 2. Copy `templates/adlc/` to `.adlc/` and edit `tiers` (path-to-tier map) and `config`.
 3. Copy `templates/git-hooks/pre-commit` to `.githooks/pre-commit` and run
    `git config core.hooksPath .githooks`. There is no pre-push hook.
-4. Copy `templates/github/workflows/adlc.yml` to `.github/workflows/`, and
+4. Copy `templates/github/workflows/adlc.yml` and `adlc-pr-title.yml` to `.github/workflows/`
+   (and `adlc-release.yml` if the repo ships releases), set squash-only merging
+   ([how](docs/commits-and-releases.md#commits-every-repo)), and copy
    `templates/REVIEW.md` and `templates/pull_request_template.md` to the repo root and `.github/`.
 5. Copy `scripts/` to `.adlc/scripts/` (the hook and workflow call them there).
 6. Skills: Claude Code users install the plugin (below). For other tools, copy
    `skills/*` into that tool's skills directory.
+
+## Versions
+
+The ADLC follows [SemVer](https://semver.org/spec/v2.0.0.html). Its public API is the rules in
+`docs/`, the `scripts/adlc.py` commands, the files in `templates/`, and the skills. A change
+that makes a compliant repo non-compliant is a new major version. Changes are listed in
+[CHANGELOG.md](CHANGELOG.md) ([Common Changelog](https://common-changelog.org/) format).
 
 ## Claude Code plugin
 

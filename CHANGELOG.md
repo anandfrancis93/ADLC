@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.6.0] - 2026-10-22
+
+_To upgrade a repo, merge its sync PR. In a repo with branch protection, change the required checks first, as the Breaking line says. The sync PR waits on the old checks until then._
+
+### Changed
+
+- **Breaking:** run the ADLC's PR checks in two jobs, `t3-approval` and `checks`, because GitHub bills each job as at least one minute; in branch protection, remove `drift`, `fast-check`, `secrets`, `protected` and `full-test`, and require `checks` ([`bb9de4e`](https://github.com/anandfrancis93/ADLC/commit/bb9de4e)) ([#16](https://github.com/anandfrancis93/ADLC/pull/16))
+- Check out the full history for `full-test`, so a test suite can read the base branch ([`bb9de4e`](https://github.com/anandfrancis93/ADLC/commit/bb9de4e)) ([#16](https://github.com/anandfrancis93/ADLC/pull/16))
+- Show a failed DESIGN.md lint as a warning in `checks`; it never blocks a merge ([`bb9de4e`](https://github.com/anandfrancis93/ADLC/commit/bb9de4e)) ([#16](https://github.com/anandfrancis93/ADLC/pull/16))
+
+### Fixed
+
+- Fail the tier and fast-check steps when `git diff` fails, instead of rating the PR T1 or checking no files ([`bb9de4e`](https://github.com/anandfrancis93/ADLC/commit/bb9de4e)) ([#16](https://github.com/anandfrancis93/ADLC/pull/16))
+- Give the `checks` job, which runs the PR's own code, a read-only token ([`bb9de4e`](https://github.com/anandfrancis93/ADLC/commit/bb9de4e)) ([#16](https://github.com/anandfrancis93/ADLC/pull/16))
+
 ## [0.5.0] - 2026-10-22
 
 _From this release on, each release opens a sync PR in each repo behind it; set up `ADLC_SYNC_TOKEN` first (`docs/sync.md`)._
@@ -80,6 +95,7 @@ _To upgrade a repo, sync it from v0.4.0 as `docs/sync.md` describes._
 
 _First release._
 
+[0.6.0]: https://github.com/anandfrancis93/ADLC/releases/tag/v0.6.0
 [0.5.0]: https://github.com/anandfrancis93/ADLC/releases/tag/v0.5.0
 [0.4.0]: https://github.com/anandfrancis93/ADLC/releases/tag/v0.4.0
 [0.3.0]: https://github.com/anandfrancis93/ADLC/releases/tag/v0.3.0

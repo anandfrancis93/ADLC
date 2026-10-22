@@ -34,11 +34,11 @@ Repo-owned files start from a template. Sync adds each one only when it is missi
 
 To change a managed file for every repo, change it in this repo and release a new version.
 
-## One-time setup in the ADLC repo
+## Setup in the ADLC repo
 
 This repo is public, so any repo can call its workflows, public or private
 ([GitHub docs](https://docs.github.com/en/actions/reference/workflows-and-actions/reusing-workflow-configurations)).
-Public repos use standard GitHub-hosted runners for free
+The calling repo pays for the minutes. Standard GitHub-hosted runners are free only in public repos
 ([GitHub docs](https://docs.github.com/en/billing/concepts/product-billing/github-actions)).
 
 The sync PRs need a token. The built-in workflow token works only in the repo that runs the workflow

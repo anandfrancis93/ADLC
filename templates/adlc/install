@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# Install dependencies exactly as locked. CI runs this before fast-check and full-test.
+# Never resolve new versions here: a lockfile that is out of date must fail.
+set -euo pipefail
+# Node: package-lock.json is committed.
+# [ -f package-lock.json ] && npm ci
+# Python with uv (uv.lock committed; pin uv itself):
+# [ -f uv.lock ] && pip install uv==<version> && uv sync --locked
+echo "ADLC: edit .adlc/install to install this repo's locked dependencies" >&2

@@ -11,5 +11,5 @@ description: Start any change in a repo that follows the ADLC (has .adlc/tiers).
 4. Write the intent where the tier says:
    - T1: one line for the PR description. Go straight to building.
    - T2: an issue, or the PR description, with the intent. Then use `adlc-spec`.
-   - T3: `intent.md` committed on the branch. Then use `adlc-spec`, and get the owner to accept the plan before building.
+   - T3: the Intent section of `docs/specs/YYYY-MM-DD-<slug>.md`, committed on the branch. Then use `adlc-spec`, and get the owner to accept the plan before building.
 5. Before building T2 or T3, write a plan: files that change, order of work, tests that prove it.

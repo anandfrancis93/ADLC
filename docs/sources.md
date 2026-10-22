@@ -13,7 +13,7 @@ No source gives guidance on retiring rules or checks. The Retire stage extends
 the playbook's monthly review tuning and its advice to replace evals that stop
 discriminating.
 
-## Conventions (read in full on 22 Oct 2026)
+## Conventions (read on 22 Oct 2026)
 
 | Source | What the ADLC takes from it |
 | --- | --- |
@@ -23,3 +23,9 @@ discriminating.
 | [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/) | Common Changelog's parent. Read to compare; the ADLC follows the stricter Common Changelog |
 | [DESIGN.md](https://github.com/google-labs-code/design.md), Google Labs, Apache 2.0, format version alpha | Optional design file for UI repos and its `lint` command |
 | [Version your app](https://developer.android.com/studio/publish/versioning), Android Developers | `versionCode` must increase per release; `versionName` is a free string shown to users |
+| [Prettier: configuration](https://prettier.io/docs/configuration) and [install](https://prettier.io/docs/install) | Prettier reads `.editorconfig`; pin its exact version |
+| [Ruff formatter](https://docs.astral.sh/ruff/formatter/) | `ruff format --check` exits 1 when files would change; style changes ship in minor releases |
+| [Betterleaks v1.x README and scanning guide](https://github.com/betterleaks/betterleaks/tree/v1.x) | `git --pre-commit --staged`, `--log-opts`, `--redact`; v1 install paths; main branch is v2 |
+| [actions/setup-node](https://github.com/actions/setup-node), [actions/setup-python](https://github.com/actions/setup-python) | `node-version-file`, `python-version-file` |
+| [npm ci](https://docs.npmjs.com/cli/commands/npm-ci), [uv sync](https://docs.astral.sh/uv/concepts/projects/sync/) | Exact installs that fail on a stale lockfile |
+| [Dependabot options reference](https://docs.github.com/en/code-security/reference/supply-chain-security/dependabot-options-reference), [dependabot/fetch-metadata](https://github.com/dependabot/fetch-metadata) | Weekly schedule, groups by update type, `commit-message` prefix, cooldown for version updates only; read-only token on Dependabot `pull_request` runs |

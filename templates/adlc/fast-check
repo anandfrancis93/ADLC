@@ -1,9 +1,30 @@
 #!/usr/bin/env bash
-# Pre-commit fast check. Receives the staged file paths as arguments.
-# Format, lint and type-check only those files. Never run the full test suite here.
+# Fast check. Receives changed file paths as arguments.
+# Pre-commit: formats the staged files and stages the result, then lints them.
+# CI (ADLC_CHECK_ONLY=1): checks formatting without writing, then lints.
+# One formatter per language. Never run the full test suite here.
 set -euo pipefail
 [ "$#" -eq 0 ] && exit 0
-# Example for a Node repo:
-# npx prettier --check "$@"
-# npx eslint "$@"
+check_only="${ADLC_CHECK_ONLY:-}"
+
+# A file with unstaged edits cannot be formatted and re-staged without also staging those edits.
+if [ -z "$check_only" ]; then
+  partial=$(git diff --name-only -- "$@")
+  if [ -n "$partial" ]; then
+    echo "ADLC: these files have unstaged edits; stage or stash them so the formatter can run:" >&2
+    echo "$partial" >&2
+    exit 1
+  fi
+fi
+
+# Example: Prettier for web files (version pinned exactly in package.json).
+# if [ -n "$check_only" ]; then npx prettier --check --ignore-unknown "$@"; else npx prettier --write --ignore-unknown "$@"; fi
+# Example: Ruff for Python (version pinned in the lockfile).
+# py=(); for f in "$@"; do case "$f" in *.py|*.pyi) py+=("$f");; esac; done
+# if [ "${#py[@]}" -gt 0 ]; then
+#   if [ -n "$check_only" ]; then ruff format --check "${py[@]}"; else ruff format "${py[@]}"; fi
+#   ruff check "${py[@]}"
+# fi
+
+[ -z "$check_only" ] && git add -- "$@"
 echo "ADLC: edit .adlc/fast-check to run this repo's formatter and linter" >&2

@@ -1,0 +1,10 @@
+# Copy to .editorconfig. Kept short because Prettier reads it (https://prettier.io/docs/configuration#editorconfig).
+# Settings for other languages belong in that language's formatter config, not here.
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+indent_style = space
+indent_size = 2

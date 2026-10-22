@@ -22,17 +22,23 @@ Claude Code users also get an optional plugin.
 Details: [docs/stages.md](docs/stages.md), [docs/risk-tiers.md](docs/risk-tiers.md),
 [docs/review-budget.md](docs/review-budget.md), [docs/retire.md](docs/retire.md),
 [docs/commits-and-releases.md](docs/commits-and-releases.md) (Conventional Commits, SemVer,
-Common Changelog), [docs/design-md.md](docs/design-md.md) (optional, repos with a UI).
+Common Changelog), [docs/design-md.md](docs/design-md.md) (optional, repos with a UI),
+[docs/formatting.md](docs/formatting.md), [docs/secrets.md](docs/secrets.md),
+[docs/toolchain.md](docs/toolchain.md) (version files, lockfiles, Dependabot).
 Sources and what each contributed: [docs/sources.md](docs/sources.md).
 
 ## Adopt it in a repo
 
 1. Copy `templates/AGENTS.md` to the repo root and fill in its facts. Keep it under 60 lines.
-2. Copy `templates/adlc/` to `.adlc/` and edit `tiers` (path-to-tier map) and `config`.
+2. Copy `templates/adlc/` to `.adlc/` and edit `tiers` (path-to-tier map), `install`,
+   `fast-check` (formatter and linter) and `full-test`.
 3. Copy `templates/git-hooks/pre-commit` to `.githooks/pre-commit` and run
-   `git config core.hooksPath .githooks`. There is no pre-push hook.
-4. Copy `templates/github/workflows/adlc.yml` and `adlc-pr-title.yml` to `.github/workflows/`
-   (and `adlc-release.yml` if the repo ships releases), set squash-only merging
+   `git config core.hooksPath .githooks`. Install Betterleaks v1.9.0 ([how](docs/secrets.md)).
+   There is no pre-push hook.
+4. Copy `templates/github/workflows/adlc.yml`, `adlc-pr-title.yml` and `adlc-dependabot.yml` to
+   `.github/workflows/` (and `adlc-release.yml` if the repo ships releases), `templates/github/dependabot.yml`
+   to `.github/`, and `templates/editorconfig` to `.editorconfig`. Commit a version file per language
+   and the lockfile ([toolchain](docs/toolchain.md)). Set squash-only merging
    ([how](docs/commits-and-releases.md#commits-every-repo)), and copy
    `templates/REVIEW.md` and `templates/pull_request_template.md` to the repo root and `.github/`.
 5. Copy `scripts/` to `.adlc/scripts/` (the hook and workflow call them there).

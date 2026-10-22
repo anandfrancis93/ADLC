@@ -1,0 +1,36 @@
+# ADLC tier for Dependabot PRs. Copy to .github/workflows/adlc-dependabot.yml.
+# Patch and minor version updates are T1, majors are T2, whatever paths they touch.
+# Uses pull_request_target because Dependabot's pull_request token is read-only.
+# It never checks out or runs the PR's code.
+name: ADLC Dependabot tier
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  pull-requests: write
+  issues: write
+
+jobs:
+  tier:
+    if: github.event.pull_request.user.login == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - id: meta
+        uses: dependabot/fetch-metadata@v3
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+          UPDATE: ${{ steps.meta.outputs.update-type }}
+        run: |
+          case "$UPDATE" in
+            version-update:semver-patch|version-update:semver-minor) tier=T1 ;;
+            version-update:semver-major) tier=T2 ;;
+            # Empty when the PR has commits not made by Dependabot: tier it by hand.
+            *) echo "Cannot tier this PR from Dependabot metadata ('$UPDATE'); set adlc:T* by hand." >&2; exit 1 ;;
+          esac
+          echo "Dependabot $UPDATE: $tier" >> "$GITHUB_STEP_SUMMARY"
+          for t in T1 T2 T3; do gh label create "adlc:$t" --repo "$REPO" --force >/dev/null; done
+          gh pr edit "$PR" --repo "$REPO" --remove-label adlc:T1,adlc:T2,adlc:T3 --add-label "adlc:$tier"

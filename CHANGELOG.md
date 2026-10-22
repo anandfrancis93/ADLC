@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.5.0] - 2026-10-22
+
+_From this release on, each release opens a sync PR in each repo behind it; set up `ADLC_SYNC_TOKEN` first (`docs/sync.md`)._
+
+### Added
+
+- Open a sync PR in each repo behind a release when its tag arrives (`adlc.py sync-repos`, secret `ADLC_SYNC_TOKEN`) ([`fb42fa2`](https://github.com/anandfrancis93/ADLC/commit/fb42fa2)) ([#14](https://github.com/anandfrancis93/ADLC/pull/14))
+- Accept the owner's `adlc:t3-approved` label, added after the latest commit, as the T3 approval (`adlc.py t3-approved`), because GitHub does not let a PR's author approve it ([`fb42fa2`](https://github.com/anandfrancis93/ADLC/commit/fb42fa2)) ([#14](https://github.com/anandfrancis93/ADLC/pull/14))
+
+### Fixed
+
+- Fail `t3-approval` when the `tier` job fails, instead of skipping it, which GitHub counts as passed ([`fb42fa2`](https://github.com/anandfrancis93/ADLC/commit/fb42fa2)) ([#14](https://github.com/anandfrancis93/ADLC/pull/14))
+
 ## [0.4.0] - 2026-10-22
 
 _To upgrade a repo, sync it from v0.4.0 as `docs/sync.md` describes._
@@ -67,6 +80,7 @@ _To upgrade a repo, sync it from v0.4.0 as `docs/sync.md` describes._
 
 _First release._
 
+[0.5.0]: https://github.com/anandfrancis93/ADLC/releases/tag/v0.5.0
 [0.4.0]: https://github.com/anandfrancis93/ADLC/releases/tag/v0.4.0
 [0.3.0]: https://github.com/anandfrancis93/ADLC/releases/tag/v0.3.0
 [0.2.0]: https://github.com/anandfrancis93/ADLC/releases/tag/v0.2.0

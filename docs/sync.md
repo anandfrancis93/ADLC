@@ -44,8 +44,8 @@ A public repo can use the ADLC's shared CI only after this repo is made public.
 The sync PRs need a token. The built-in workflow token works only in the repo that runs the workflow
 ([GitHub docs](https://docs.github.com/en/actions/concepts/security/github_token)). Create a fine-grained token once:
 
-1. Open [this prefilled form](https://github.com/settings/personal-access-tokens/new?name=ADLC+sync&description=Opens+ADLC+sync+PRs+from+the+ADLC+release+workflow&target_name=anandfrancis93&expires_in=366&contents=write&pull_requests=write&workflows=write).
-   It sets Contents, Pull requests and Workflows to write, and an expiry of 366 days.
+1. Open [this prefilled form](https://github.com/settings/personal-access-tokens/new?name=ADLC+sync&description=Opens+ADLC+sync+PRs+from+the+ADLC+release+workflow&target_name=anandfrancis93&expires_in=365&contents=write&pull_requests=write&workflows=write).
+   It sets Contents, Pull requests and Workflows to write, and an expiry of 365 days.
 2. Under Repository access, pick "All repositories". The form cannot prefill this choice.
 3. Generate the token, and copy it.
 4. In this repo: Settings > Secrets and variables > Actions > New repository secret.
@@ -60,7 +60,7 @@ That also needs `environment:` on the `sync-repos` job, which this repo does not
 To run it again: Actions > ADLC sync repos > Run workflow, then pick the release tag.
 The box "List what it would do, and open no PRs" starts checked. Clear it to open PRs.
 
-The token expires after 366 days. The first release after that fails its sync run. Make a new token then.
+The token expires after 365 days. The first release after that fails its sync run. Make a new token then.
 ([GitHub docs](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens))
 
 ## Adopt the ADLC or update a repo

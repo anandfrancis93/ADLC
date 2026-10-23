@@ -1,9 +1,14 @@
 # Review instructions (ADLC review budget)
 
+Maintained by the tech lead, who approves each change to this file. The monthly retire run tunes it.
+
 ## What to check
 - Bugs: logic errors, broken edge cases, regressions.
 - Security: injection, auth gaps, secrets or personal data in logs.
-- Compliance: the change matches its spec and plan, if any.
+- Compliance: the change matches its spec, its plan and the design rules.
+  - T3: `spec.md` and `plan.md` in the change's `intent/` folder.
+  - T2: the spec in the PR description.
+  - Design rules: `AGENTS.md`, and `DESIGN.md` if the repo has one.
 
 ## Tags
 - Important: would break behavior, leak data or breach a policy. Only Important blocks.

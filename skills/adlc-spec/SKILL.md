@@ -4,8 +4,13 @@ description: Write the spec for a T2 or T3 change in an ADLC repo. The spec list
 ---
 # ADLC Spec
 
-T2: a Spec section in the PR description. T3: the file `docs/specs/YYYY-MM-DD-<slug>.md`
-(template: `templates/spec.md` in the ADLC repo), which already holds the Intent from `adlc-plan`.
+T2: a Spec section in the PR description.
+
+T3: `spec.md` in the change folder `intent/YYYY-MM-DD-<slug>/`, next to the accepted `intent.md`
+(template: `templates/intent/spec.md` in the ADLC repo).
+Open it as its own PR after the intent PR merges.
+The product owner consults the tech lead, then accepts the spec by merging.
+
 Write only:
 
 1. **Tests to add**: one line each, as the test name and what it asserts.
@@ -18,8 +23,10 @@ Write only:
 Do not write expected results, counts or proof in prose. The tests and CI produce
 the results; the PR links to the CI run.
 
-T3 specs stay in the repo after merging, as the record of why the change was made. Do not edit
-an old spec to describe a later change; write a new spec that links to it.
+T3 folders stay in the repo after merging, as the record of why the change was made.
+Do not edit an old intent or spec to describe a later change.
+Start a new folder that links to the old one.
+Older single-file specs in `docs/specs/` stay where they are.
 
 For T3 bug fixes, the first test reproduces the bug and must fail before the fix.
 Add its path to `.adlc/protected` in the same commit as the test, so the fix cannot edit it.

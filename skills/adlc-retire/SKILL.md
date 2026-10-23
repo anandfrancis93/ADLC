@@ -1,6 +1,6 @@
 ---
 name: adlc-retire
-description: Run the monthly ADLC retire review. Proposes removing code, flags, and rules, skills, hooks, CI checks, tests or proof suites that cost more than they give. Use monthly, when AGENTS.md passes 60 lines, when the main AI model changes, or when asked to retire something.
+description: Run the monthly ADLC retire review and REVIEW.md tuning. Proposes removing code, flags, and rules, skills, hooks, CI checks, tests or proof suites that cost more than they give. Use monthly, when AGENTS.md passes 60 lines, when the main AI model changes, or when asked to retire something.
 ---
 # ADLC Retire
 
@@ -15,7 +15,11 @@ description: Run the monthly ADLC retire review. Proposes removing code, flags, 
 5. Review the "Candidates from repeated review findings" table the same way.
 6. After a model change: read `AGENTS.md`, the skills and `REVIEW.md` for rituals written for an
    older model, and for instructions that contradict each other. Propose removing them.
-7. Open one PR per removal (T1 or T2). The owner approves each process removal.
+7. Monthly only: rate last month's review findings as useful or not, from the PR history.
+   Propose `REVIEW.md` edits: what to skip, and examples of Important findings for this repo.
+   Keep the Important definition and the five-nit cap as `docs/review-budget.md` sets them.
+   The tech lead approves these edits.
+8. Open one PR per removal (T1 or T2). The owner approves each process removal.
    Update `Last reviewed` and `Decision` in the log.
 
 Product retirement (features, dependencies, repos): mark deprecated, remove callers, delete, archive if empty.

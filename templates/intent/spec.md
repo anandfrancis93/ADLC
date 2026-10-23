@@ -1,10 +1,6 @@
-# <Title>
+# Spec: <title>
 
-Date: YYYY-MM-DD. PR: #<number>. Tier: T3.
-
-## Intent
-What is wanted, why, constraints, open questions.
-Done when: the test, command or check that proves it.
+Date: YYYY-MM-DD. Intent: [intent.md](intent.md). Tier: T3.
 
 ## Tests to add
 - `<test name>`: <what it asserts>

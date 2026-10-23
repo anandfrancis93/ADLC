@@ -9,8 +9,8 @@ Assume every role exists, even when one person holds them all.
 
 | Role | Does |
 | --- | --- |
-| Product owner | Accepts the intent and the spec. Consults the tech lead on a T3 spec. |
-| Tech lead | Accepts a T3 plan. Owns `REVIEW.md` and tunes it monthly. |
+| Product owner | Accepts a T3 intent and a T3 spec by merging their PRs. Consults the tech lead on the spec. |
+| Tech lead | Accepts a T3 plan. Maintains `REVIEW.md` and approves its monthly tuning. |
 | Engineer | Writes the plan and the code. Accepts a T2 plan. |
 | Owner | Approves T3 merges and process removals, and decides after two review rounds. CI reads it from `ADLC_OWNER`. |
 

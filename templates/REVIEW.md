@@ -1,6 +1,6 @@
 # Review instructions (ADLC review budget)
 
-Owner: the tech lead. The tech lead approves every change to this file and tunes it monthly.
+Maintained by the tech lead, who approves each change to this file. The monthly retire run tunes it.
 
 ## What to check
 - Bugs: logic errors, broken edge cases, regressions.

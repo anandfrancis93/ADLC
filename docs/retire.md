@@ -29,8 +29,10 @@ Fix it, then judge it. A check that ran rarely because few changes touched its p
 judged as usual.
 
 ## Review tuning
-Monthly only. The tech lead rates last month's review findings as useful or not.
-The tech lead then tunes `REVIEW.md`: what counts as Important, the nit cap, and what to skip.
+Monthly only. The retire run rates last month's review findings as useful or not, from the PR history.
+It then proposes `REVIEW.md` edits: what to skip, and examples of Important findings for this repo.
+The Important definition and the five-nit cap stay as [review-budget.md](review-budget.md) sets them.
+These edits are tuning, not process removals, so the tech lead approves them.
 Generated paths and anything CI enforces stay on the skip list.
 
 ## After a model change

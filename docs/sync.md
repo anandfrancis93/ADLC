@@ -14,8 +14,9 @@ from that release. Each new release opens a sync PR in every repo behind it.
 - A PR runs three jobs: `t3-approval`, `checks` and `pr-title`. `checks` runs drift, protected, secrets,
   design-md, fast-check and full-test as steps of one job. GitHub bills each job as at least one minute
   ([GitHub docs](https://docs.github.com/en/billing/reference/actions-runner-pricing)).
-- Review and label events run a separate caller, `adlc-review.yml`, with only `t3-approval` and `review-budget`.
-  A job skipped on those runs would report success under its check name, and hide a failure.
+- Review and label events run a separate caller, `adlc-review.yml`, with only `t3-approval`, `rerun-t3-approval`
+  and `review-budget`. A job skipped on those runs would report success under its check name, and hide a failure.
+  After the owner approves a T3 PR, `rerun-t3-approval` re-runs the failed `t3-approval` jobs of the earlier runs.
 - A release tag starts `.github/workflows/sync-repos.yml` in this repo.
   It opens a sync PR in each repo on an older release.
 
@@ -85,6 +86,14 @@ Then:
    Do what each **Breaking** line asks.
 2. Open a PR titled `chore(adlc): sync to X.Y.Z`. CI rates it T3, because it changes CI files.
 3. For a new repo, fill in the repo-owned files and settings. See "Adopt it in a repo" in the README.
+
+### A T3 PR open across a sync
+
+A T3 PR that was open when the repo merged a sync PR has an `ADLC` run of the release before.
+A re-run of one job uses the shared workflow of the run's first attempt
+([GitHub docs](https://docs.github.com/en/actions/reference/workflows-and-actions/reusing-workflow-configurations#behavior-of-reusable-workflows-when-re-running-jobs)),
+so the old drop step would remove the label again. So `rerun-t3-approval` does not re-run that run, and fails with its link.
+After the owner approves, move the PR to draft and back once. The new `ADLC` run uses the new release and passes.
 
 ### First sync of a repo set up by copying (v0.3.0 or earlier)
 

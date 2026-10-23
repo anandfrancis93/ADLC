@@ -3,6 +3,8 @@
 # It re-checks the T3 approval after a review or a label change, and counts agent review rounds.
 # The caller's job id is "adlc" in both callers, so t3-approval here reports under the
 # same check name as in adlc.yml. The checks job runs only in adlc.yml.
+# After the owner approves, rerun-t3-approval re-runs the failed t3-approval of the earlier runs.
+# The caller grants actions: write for that job alone.
 name: ADLC review
 
 on:
@@ -17,20 +19,27 @@ on:
         type: string
         default: ""
 
-permissions:
-  contents: read
-  pull-requests: write
-  issues: write
-  checks: read
-
+# No workflow-level permissions: each job names its own, and the caller's grant caps them.
+# A block names the scopes the job gets. Each scope it leaves out is none.
 jobs:
   # The tier, its label and, for a T3 PR, the owner's approval, in one job. So a tier that fails
   # also fails this check: a skipped required check would count as passed. adlc.yml and adlc-review.yml
-  # run the same job, so a review or a label change re-checks the approval under the same check name.
+  # run the same job. GitHub keeps the failed check of an earlier run after a later run passes, so after
+  # the owner approves, rerun-t3-approval in adlc-review.yml re-runs the failed job of the earlier runs.
   t3-approval:
     if: github.event.pull_request.user.login != 'dependabot[bot]'
     runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      checks: read
+      contents: read
+      issues: write
+      pull-requests: write
+    outputs:
+      tier: ${{ steps.tier.outputs.tier }}
     steps:
+      # A re-run keeps the event, so this step runs again on each re-run of a push run. The run's
+      # created_at stays the same on a re-run. A label added after that time approved this commit, so the step keeps it.
       # The approval step also ignores a label older than the commit, so this is a second guard.
       - name: Drop the T3 approval label after a new commit
         if: github.event.action == 'synchronize'
@@ -39,6 +48,17 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           PR: ${{ github.event.pull_request.number }}
         run: |
+          created=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" --jq .created_at)
+          added=$(gh api --paginate "repos/$GITHUB_REPOSITORY/issues/$PR/events" | jq -rs --arg since "$created" '
+            [add // [] | .[] | select(.event == "labeled" or .event == "unlabeled")
+              | select(.label.name == "adlc:t3-approved")]
+            | sort_by(.created_at, .id) | last
+            | if . != null and .event == "labeled" and (.created_at | fromdateiso8601) > ($since | fromdateiso8601)
+              then .created_at else "" end')
+          if [ -n "$added" ]; then
+            echo "Kept adlc:t3-approved: it was added at $added, after this run was created at $created."
+            exit 0
+          fi
           if ! out=$(gh api -X DELETE "repos/$GITHUB_REPOSITORY/issues/$PR/labels/adlc:t3-approved" 2>&1); then
             case "$out" in *"HTTP 404"*) ;; *) echo "$out" >&2; exit 1 ;; esac
           fi
@@ -67,7 +87,8 @@ jobs:
       # latest commit reached GitHub, or an approving review of the latest commit. GitHub does not let
       # a PR's author approve it, so the label also works on PRs opened from the owner's account.
       # The commit reached GitHub when its first check suite was created. A label older than that
-      # approved an earlier commit.
+      # approved an earlier commit. So does a label older than the newest force push, which can bring
+      # back a commit with older check suites.
       - name: Check the owner's approval
         if: steps.tier.outputs.tier == 'T3'
         shell: bash
@@ -84,9 +105,117 @@ jobs:
           python3 -I .adlc/scripts/adlc.py t3-approved --owner "$OWNER" --head "$HEAD" --since "$since" \
             --reviews "$RUNNER_TEMP/reviews.json" --events "$RUNNER_TEMP/events.json"
 
+  # After the owner approves, re-run the failed t3-approval of the earlier runs on the head commit.
+  # GitHub keeps the failed check of an earlier run after a later run passes, so only a re-run clears it.
+  # It waits until such a run completes: the docs do not say whether a job of a run in progress can be re-run.
+  # A re-run of one job uses the shared workflow of the run's first attempt. So a run of another ADLC
+  # release is not re-run: its drop step would remove the label again. docs/sync.md gives the step for it.
+  # Re-running t3-approval also re-runs this job, at attempt 2, so the attempt check stops a chain.
+  # Only this job can write actions, and it runs no file from the PR.
+  rerun-t3-approval:
+    needs: t3-approval
+    if: needs.t3-approval.outputs.tier == 'T3' && github.run_attempt == '1'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Re-run the failed approval checks of earlier runs
+        shell: python3 -I {0}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+          POLL_SECONDS: 30
+          WAIT_SECONDS: 1800
+        run: |
+          import json, os, subprocess, sys, time
+
+          repo, pr, head = os.environ["GITHUB_REPOSITORY"], os.environ["PR"], os.environ["HEAD"]
+          this_run = int(os.environ["GITHUB_RUN_ID"])
+          poll, deadline = int(os.environ["POLL_SECONDS"]), time.monotonic() + int(os.environ["WAIT_SECONDS"])
+          again = ("requested", "queued", "pending", "waiting", "in_progress")
+
+
+          def api(path, method="GET"):
+              p = subprocess.run(["gh", "api", "-X", method, f"repos/{repo}/{path}"], capture_output=True, text=True)
+              if p.returncode:
+                  raise RuntimeError(p.stderr.strip())
+              return json.loads(p.stdout or "null")
+
+
+          def release(run):
+              """The commit of the ADLC workflow that the run uses."""
+              return sorted(w["sha"] for w in run.get("referenced_workflows") or [])
+
+
+          def approval_runs():
+              """Each run of the two callers on the head commit, with the latest attempt of its t3-approval."""
+              found = []
+              for caller in ("adlc.yml", "adlc-review.yml"):
+                  for run in api(f"actions/workflows/{caller}/runs?head_sha={head}&per_page=100")["workflow_runs"]:
+                      if run["path"] != f".github/workflows/{caller}" or run["head_sha"] != head:
+                          continue
+                      jobs = api(f"actions/runs/{run['id']}/jobs?filter=latest&per_page=100")["jobs"]
+                      job = next((j for j in jobs if j["name"].split(" / ")[-1] == "t3-approval"), None)
+                      if job:
+                          found.append((run, job))
+              return found
+
+
+          mine = release(api(f"actions/runs/{this_run}"))
+          while True:
+              if api(f"pulls/{pr}")["head"]["sha"] != head:
+                  print(f"The PR's head is no longer {head}. The runs of the new head check the approval.")
+                  sys.exit(0)
+              found = approval_runs()
+              same = [(r, j) for r, j in found if r["id"] != this_run and release(r) == mine]
+              wait = [r for r, j in same
+                      if j["status"] != "completed" or (j["conclusion"] == "failure" and r["status"] != "completed")]
+              if not wait:
+                  break
+              if time.monotonic() >= deadline:
+                  for r in wait:
+                      print(f"::error::Run {r['html_url']} did not complete in time, so its t3-approval was not re-run.")
+                  sys.exit(1)
+              time.sleep(poll)
+
+          failed = False
+          for r, j in same:
+              if j["conclusion"] != "failure":
+                  continue
+              try:
+                  api(f"actions/jobs/{j['id']}/rerun", "POST")
+                  print(f"Re-ran t3-approval of run {r['html_url']}.")
+              except RuntimeError as e:
+                  if api(f"actions/runs/{r['id']}")["status"] in again:
+                      print(f"Run {r['html_url']} is already running again.")
+                  else:
+                      print(f"::error::Could not re-run t3-approval of run {r['html_url']}: {e}")
+                      failed = True
+          for r, j in found:
+              if release(r) == mine or j["conclusion"] != "failure":
+                  continue
+              newer = [n for n, k in found if n["path"] == r["path"] and k["conclusion"] == "success"
+                       and (n["created_at"], n["id"]) > (r["created_at"], r["id"])]
+              if newer:
+                  print(f"::notice::Run {r['html_url']} uses another ADLC release, and the newer run "
+                        f"{newer[-1]['html_url']} passed t3-approval.")
+              else:
+                  print(f"::error::Run {r['html_url']} uses another ADLC release, so a re-run would remove the label "
+                        "again. Move the PR to draft and back once. The new ADLC run uses this release.")
+                  failed = True
+          sys.exit(1 if failed else 0)
+
   review-budget:
     if: inputs.reviewers != ''
     runs-on: ubuntu-latest
+    permissions:
+      checks: read
+      contents: read
+      issues: write
+      pull-requests: write
     steps:
       - uses: actions/checkout@v7
       - env:

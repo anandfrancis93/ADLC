@@ -20,7 +20,7 @@ On [portfolio PR #23](https://github.com/anandfrancis93/portfolio/pull/23), time
 So GitHub appears to count the latest result in each workflow, not the latest result under the check name.
 This is observed behavior. I don't know GitHub's documented rule.
 It contradicts the comments in `adlc.yml` and `adlc-review.yml`, which say a label or review event "re-checks the approval under the same check name".
-Each repo on the ADLC meets this on each T3 PR. Portfolio PR #22 needed manual re-runs too; they passed because its runs started on `opened`.
+Each repo on the ADLC meets this on each T3 PR. Portfolio PR #22 needed manual re-runs too; they passed because no drop step ran: the `ADLC` run started on `opened`.
 
 ## Proposed outcome
 - After the owner approves, the PR can merge when its other checks pass. No one re-runs a job or moves the PR to draft.
@@ -43,7 +43,7 @@ Each repo on the ADLC meets this on each T3 PR. Portfolio PR #22 needed manual r
 
 ## Done when
 - `bash tests/run.sh` passes, with new tests that fail on `main` today. They pin two things:
-  the drop step does not run on a re-run, and the owner's approval clears the red check of the earlier `ADLC` run.
+  a re-run does not remove a label that the owner added after the head commit, and the owner's approval clears the red check of the earlier `ADLC` run.
 - On a T3 PR in a repo on the new release, after a push:
   1. Before any approval, `gh pr merge` is refused. A label from another account does not change that.
   2. The owner adds the label, and the PR then merges with no re-run and no draft toggle.

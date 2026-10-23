@@ -7,8 +7,8 @@ Files that match no pattern are T2.
 | | T1 Low | T2 Standard | T3 High |
 | --- | --- | --- | --- |
 | Examples | Docs, copy, CSS, comments, config with no behavior change | A behavior change inside one module | Data and schemas, auth, grading or scoring logic, migrations, public interfaces, CI workflows, anything not reversible |
-| Plan | One line in the PR | Issue with intent | Intent in `docs/specs/` |
-| Design | None | Spec: tests to add | Spec with Decision section, kept in `docs/specs/`, plus accepted plan |
+| Plan | One line in the PR | Issue with intent | `intent/<change>/intent.md`, own PR |
+| Design | None | Spec: tests to add | `spec.md` with Decision section, own PR; `plan.md` accepted before code ([folder](stages.md#t3-change-folder)) |
 | Verify | Pre-commit, CI | Pre-commit, CI | Pre-commit, CI, failing test first, proof for changed inputs |
 | Review | One review | One review | One review |
 | Release | Merge when green | Merge when green | Owner approves |

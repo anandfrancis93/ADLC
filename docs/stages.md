@@ -4,21 +4,50 @@ Each stage ends with an output in git or CI. Stage 1 sets a risk tier (T1, T2, T
 and the tier decides how much of stages 2 to 6 a change goes through
 ([risk-tiers.md](risk-tiers.md)). Stage 7 feeds new intents back to stage 1.
 
+## Roles
+Assume every role exists, even when one person holds them all.
+
+| Role | Does |
+| --- | --- |
+| Product owner | Accepts the intent and the spec. Consults the tech lead on a T3 spec. |
+| Tech lead | Accepts a T3 plan. Owns `REVIEW.md` and tunes it monthly. |
+| Engineer | Writes the plan and the code. Accepts a T2 plan. |
+| Owner | Approves T3 merges and process removals, and decides after two review rounds. CI reads it from `ADLC_OWNER`. |
+
+## T3 change folder
+Each T3 change gets one folder, `intent/YYYY-MM-DD-<slug>/`, with three files.
+Each file is accepted in order, and each acceptance starts the next step.
+Templates: `templates/intent/` in the ADLC repo.
+
+```mermaid
+flowchart LR
+  I["intent.md<br/>PR 1"] -->|product owner merges| S["spec.md<br/>PR 2"]
+  S -->|product owner merges| P["plan.md<br/>first commit of code PR"]
+  P -->|tech lead accepts| C[code commits]
+```
+
+The folder stays after merging, as the record of the change.
+Older single-file specs in `docs/specs/` stay where they are.
+
 ## 1 Plan
 - Write the intent: what is wanted, why, constraints, open questions, and when it is done.
   "Done" names the check that proves it: a test, a command or a page to load.
-- T1: one line in the PR. T2: an issue. T3: the Intent section of `docs/specs/YYYY-MM-DD-<slug>.md`.
+- T1: one line in the PR. T2: an issue. T3: `intent.md` in the change folder, merged in its own PR.
 - Set the tier with `scripts/adlc.py tier` on the planned files. A person may raise a tier, never lower it.
 
 ## 2 Design (T2, T3)
-- The spec lists the acceptance tests to add and the files in scope. T3 specs add a short
-  Decision section (choice, alternatives, why) and stay in `docs/specs/` after merging.
+- The spec lists the acceptance tests to add and the files in scope.
+- A T3 spec is `spec.md` in the change folder, merged in its own PR after the intent.
+  It adds a short Decision section (choice, alternatives, why).
   There are no separate architecture decision records.
 - Results are not written in the spec. Tests and CI produce them.
 - Repos with a UI may keep a `DESIGN.md`; CI lints it. See [design-md.md](design-md.md).
 
 ## 3 Build
 - T2 and T3 start from an accepted plan (plan mode in Claude Code, or a written plan in any tool).
+- A T3 plan is `plan.md` in the change folder, the first commit of the code PR.
+  The tech lead accepts it before any code is pushed.
+  When the work departs from the plan, update `plan.md` in the same commit.
 - The pre-commit hook scans the staged diff for secrets, then formats, lints and type-checks
   staged files only. See [formatting.md](formatting.md) and [secrets.md](secrets.md).
 - Tool versions come from committed version files and lockfiles. See [toolchain.md](toolchain.md).

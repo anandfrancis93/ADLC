@@ -28,6 +28,11 @@ A check that broke and could not run in those 90 days has no value data, not zer
 Fix it, then judge it. A check that ran rarely because few changes touched its paths is
 judged as usual.
 
+## Review tuning
+Monthly only. The tech lead rates last month's review findings as useful or not.
+The tech lead then tunes `REVIEW.md`: what counts as Important, the nit cap, and what to skip.
+Generated paths and anything CI enforces stay on the skip list.
+
 ## After a model change
 Read `AGENTS.md`, the skills and `REVIEW.md` for rules written around an older model's faults:
 forced step-by-step rituals, "think carefully" lines, verify-twice rules, retry workarounds.

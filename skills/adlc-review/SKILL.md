@@ -10,6 +10,8 @@ ask for a new session or another model.
 Read `REVIEW.md` first. Then:
 
 1. Review the diff against the whole repo and the PR's stated intent.
+   For a T3 change, also check it against `spec.md` and `plan.md` in its `intent/` folder.
+   Flag any part of the diff that departs from `plan.md` without updating it.
 2. Tag every finding:
    - **Important**: would break behavior, leak data or breach a policy. Give file, line, evidence,
      and how to show it fails (an input, a test or a command).

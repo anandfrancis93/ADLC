@@ -8,6 +8,7 @@ This repo defines a lifecycle; it has no application code.
 
 ## Layout
 - `docs/`: the lifecycle, one file per topic.
+- `intent/`: one folder per T3 change to this repo: `intent.md`, `spec.md`, `plan.md`.
 - `skills/`: Agent Skills (SKILL.md). Name must match the folder.
 - `scripts/`: tier classifier, protected-path check, review-round counter, PR-title check,
   changelog draft and entry, sync into a repo, drift manifest.

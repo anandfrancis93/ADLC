@@ -278,6 +278,16 @@ class T3Approved(unittest.TestCase):
         self.assertEqual(self.check(events=[self.label("labeled", "anand", at="2026-10-22T05:00:00Z")]), 1)
         self.assertEqual(self.check(events=[self.label("labeled", "anand")], since=""), 1)
 
+    def test_label_from_before_a_force_push_does_not_count(self):
+        """A force push back to an earlier commit keeps that commit's old check suites."""
+        pushed = {"event": "head_ref_force_pushed", "actor": {"login": "anand"}, "created_at": "2026-10-22T05:20:00Z"}
+        self.assertEqual(self.check(events=[self.label("labeled", "anand"), pushed]), 1)
+        self.assertEqual(self.check(events=[self.label("labeled", "anand", at="2026-10-22T05:20:00Z"), pushed]), 1)
+        self.assertEqual(self.check(events=[pushed, self.label("labeled", "anand", at="2026-10-22T05:30:00Z")]), 0)
+        older = {**pushed, "created_at": "2026-10-22T04:00:00Z"}
+        self.assertEqual(self.check(events=[older, pushed, self.label("labeled", "anand", at="2026-10-22T05:30:00Z")]), 0)
+        self.assertEqual(self.check(events=[older, self.label("labeled", "anand", at="2026-10-22T04:30:00Z")]), 1)
+
     def test_unset_owner_fails(self):
         self.assertEqual(self.check([{"user": None, "state": "APPROVED", "commit_id": "h2"}], owner=""), 1)
         self.assertEqual(self.check(events=[{**self.label("labeled", "x"), "actor": None}], owner=" "), 1)
@@ -728,7 +738,7 @@ class Workflows(unittest.TestCase):
         self.assertIn("synchronize", self.job("adlc.yml", "t3-approval"))
 
     def test_review_runs_only_review_jobs(self):
-        self.assertEqual(self.jobs("adlc-review.yml"), {"t3-approval", "review-budget"})
+        self.assertEqual(self.jobs("adlc-review.yml"), {"t3-approval", "review-budget", "rerun-t3-approval"})
         self.assertEqual(self.jobs("adlc.yml"), {"t3-approval", "checks"})
         with open(os.path.join(ROOT, "templates", "github", "workflows", "adlc.yml")) as f:
             self.assertNotIn("pull_request_review", f.read())
@@ -751,3 +761,275 @@ class Workflows(unittest.TestCase):
         self.assertEqual(field(steps[names.index("fast-check")], "shell"), "bash")
         # The PR's code runs in this job, so its token can only read.
         self.assertIn("\n    permissions:\n      contents: read\n    steps:\n", self.job("adlc.yml", "checks"))
+
+    def test_only_the_re_run_job_can_write_actions(self):
+        job = self.job("adlc-review.yml", "rerun-t3-approval")
+        self.assertIn("\n    needs: t3-approval\n", job)
+        # Re-running t3-approval also re-runs this job, at attempt 2, so the attempt check stops a chain.
+        self.assertIn("\n    if: needs.t3-approval.outputs.tier == 'T3' && github.run_attempt == '1'\n", job)
+        self.assertIn("\n    permissions:\n      actions: write\n      contents: read\n      pull-requests: read\n", job)
+        self.assertNotIn("checkout", job)
+        for name in ("adlc.yml", "adlc-review.yml"):
+            with open(os.path.join(ROOT, ".github", "workflows", name)) as f:
+                head = f.read().split("\njobs:\n", 1)[0]
+            self.assertNotIn("actions: write", re.sub(r"(?m)^#.*\n", "", head), name)
+            for other in self.jobs(name) - {"rerun-t3-approval"}:
+                self.assertNotIn("actions: write", self.job(name, other), f"{name}: {other}")
+        callers = os.path.join(ROOT, "templates", "github", "workflows")
+        with open(os.path.join(callers, "adlc-review.yml")) as f:
+            self.assertIn("\n  actions: write\n", f.read().split("\njobs:\n", 1)[0])
+        with open(os.path.join(callers, "adlc.yml")) as f:
+            head = f.read().split("\njobs:\n", 1)[0]
+        self.assertIn("\n  actions: read\n", head)
+        self.assertNotIn("actions: write", head)
+
+
+def step_script(workflow, name):
+    """The run script of the step called name in this repo's workflow, without its indent."""
+    with open(os.path.join(ROOT, ".github", "workflows", workflow)) as f:
+        lines = f.read().split("\n")
+    start = next(i for i, line in enumerate(lines) if line.strip() == f"- name: {name}")
+    run_line = next(i for i in range(start, len(lines)) if lines[i].strip() == "run: |")
+    indent = len(lines[run_line]) - len(lines[run_line].lstrip()) + 2
+    script = []
+    for line in lines[run_line + 1:]:
+        if line.strip() and len(line) - len(line.lstrip()) < indent:
+            break
+        script.append(line[indent:])
+    return "\n".join(script)
+
+
+# Answers fixed GitHub API requests from api.json: {"METHOD path": [answer, ...]}, the path without its query.
+# Each request takes the next answer of its key, and the last answer repeats. An answer is {"body": ...},
+# or {"status": 404} for an error. Each request goes to log.jsonl. --jq runs jq -r, as gh prints strings raw.
+FAKE_API_GH = r"""
+import json, os, subprocess, sys
+state = os.environ["FAKE_GH_STATE"]
+args = sys.argv[1:]
+if args[:1] != ["api"]:
+    sys.exit("fake gh: unexpected " + " ".join(args))
+method, jq, rest, i = "GET", None, [], 1
+while i < len(args):
+    if args[i] in ("-X", "--method"):
+        method, i = args[i + 1], i + 2
+    elif args[i] in ("-q", "--jq"):
+        jq, i = args[i + 1], i + 2
+    elif args[i] == "--paginate":
+        i += 1
+    else:
+        rest.append(args[i])
+        i += 1
+path = rest[0]
+with open(os.path.join(state, "log.jsonl"), "a") as f:
+    f.write(json.dumps({"method": method, "path": path}) + "\n")
+key = method + " " + path.split("?")[0]
+with open(os.path.join(state, "api.json")) as f:
+    answers = json.load(f).get(key)
+if not answers:
+    sys.exit("fake gh: no answer for " + key)
+count = os.path.join(state, "count-" + key.replace("/", "_").replace(" ", "_"))
+n = int(open(count).read()) if os.path.exists(count) else 0
+with open(count, "w") as f:
+    f.write(str(n + 1))
+answer = answers[min(n, len(answers) - 1)]
+if answer.get("status", 200) >= 400:
+    sys.exit("gh: Error (HTTP %d)" % answer["status"])
+out = json.dumps(answer.get("body"))
+if jq:
+    out = subprocess.run(["jq", "-r", jq], input=out, capture_output=True, text=True, check=True).stdout
+print(out)
+"""
+
+
+class Seq(list):
+    """The answers to one request, in order, as in api.json."""
+
+
+class StepScript(unittest.TestCase):
+    """Runs the script of one workflow step against a fake gh, as GitHub runs it."""
+
+    def setUp(self):
+        self.state = tempfile.mkdtemp()
+        bin_dir = os.path.join(self.state, "bin")
+        os.makedirs(bin_dir)
+        with open(os.path.join(bin_dir, "gh"), "w") as f:
+            f.write(f"#!{sys.executable}\n{FAKE_API_GH}")
+        os.chmod(os.path.join(bin_dir, "gh"), 0o755)
+        self.env = {"PATH": bin_dir + os.pathsep + os.environ["PATH"], "FAKE_GH_STATE": self.state,
+                    "GH_TOKEN": "t", "GITHUB_REPOSITORY": "o/r", "GITHUB_RUN_ID": "9", "GITHUB_RUN_ATTEMPT": "1",
+                    "PR": "5", "HEAD": "h2"}
+
+    def serve(self, answers):
+        """answers: {"METHOD path": body, or a Seq of answers as in api.json}."""
+        api = {k: list(v) if isinstance(v, Seq) else [{"body": v}] for k, v in answers.items()}
+        with open(os.path.join(self.state, "api.json"), "w") as f:
+            json.dump(api, f)
+        for name in os.listdir(self.state):
+            if name.startswith("count-") or name == "log.jsonl":
+                os.remove(os.path.join(self.state, name))
+
+    def requests(self, method=None):
+        path = os.path.join(self.state, "log.jsonl")
+        if not os.path.exists(path):
+            return []
+        with open(path) as f:
+            log = [json.loads(line) for line in f]
+        return [e["path"] for e in log if method in (None, e["method"])]
+
+    def run_step(self, command, workflow, step, **env):
+        p = subprocess.run([*command, step_script(workflow, step)], capture_output=True, text=True,
+                           env={**os.environ, **self.env, **env})
+        return p.returncode, p.stdout + p.stderr
+
+
+class DropStep(StepScript):
+    STEP = "Drop the T3 approval label after a new commit"
+    LABEL = "repos/o/r/issues/5/labels/adlc:t3-approved"
+
+    def drop(self, events, attempt="1"):
+        self.serve({"GET repos/o/r/actions/runs/9": {"id": 9, "created_at": "2026-10-23T19:51:26Z",
+                                                     "run_started_at": "2026-10-23T20:00:00Z"},
+                    "GET repos/o/r/issues/5/events": events,
+                    "GET repos/o/r/commits/h2/check-suites": {"check_suites": [{"created_at": "2026-10-23T10:00:00Z"}]},
+                    "DELETE " + self.LABEL: Seq([{"status": 404}])})
+        code, out = self.run_step(["bash", "--noprofile", "--norc", "-eo", "pipefail", "-c"], "adlc.yml", self.STEP,
+                                  GITHUB_RUN_ATTEMPT=attempt)
+        self.assertEqual(code, 0, out)
+        return self.requests("DELETE")
+
+    def label(self, event, at, login="anand", name="adlc:t3-approved", id=1):
+        return {"id": id, "event": event, "actor": {"login": login}, "label": {"name": name}, "created_at": at}
+
+    def test_drop_step_keeps_a_label_added_after_the_push(self):
+        after = self.label("labeled", "2026-10-23T19:59:36Z")
+        for attempt in ("1", "2"):
+            self.assertEqual(self.drop([after], attempt), [], attempt)
+            self.assertEqual(self.drop([self.label("labeled", "2026-10-23T19:00:00Z", id=0), after], attempt), [])
+        # Older than the run: an approval of the commit before the push. The check suites of a commit that
+        # a force push brings back are older than the label, so they do not count here.
+        self.assertEqual(self.drop([self.label("labeled", "2026-10-23T19:51:00Z")]), [self.LABEL])
+        self.assertEqual(self.drop([self.label("labeled", "2026-10-23T19:51:26Z")]), [self.LABEL])
+        self.assertEqual(self.drop([after, self.label("unlabeled", "2026-10-23T20:00:00Z", id=2)]), [self.LABEL])
+        self.assertEqual(self.drop([self.label("labeled", "2026-10-23T20:00:00Z", name="adlc:T3")]), [self.LABEL])
+        self.assertEqual(self.drop([]), [self.LABEL])
+
+
+class RerunStep(StepScript):
+    STEP = "Re-run the failed approval checks of earlier runs"
+
+    def run_of(self, id, caller="adlc.yml", status="completed", sha="s7", created="2026-10-23T20:00:00Z", head="h2"):
+        return {"id": id, "path": f".github/workflows/{caller}", "head_sha": head, "status": status,
+                "created_at": created, "html_url": f"https://github.com/o/r/actions/runs/{id}",
+                "referenced_workflows": [{"path": f"anandfrancis93/ADLC/.github/workflows/{caller}@v0", "sha": sha,
+                                          "ref": "refs/tags/v0"}]}
+
+    def job(self, id, conclusion="failure", name="t3-approval", status="completed"):
+        return {"id": id, "name": f"adlc / {name}", "status": status,
+                "conclusion": conclusion if status == "completed" else None}
+
+    def rerun(self, runs, jobs, extra=None, head="h2", wait="60"):
+        """runs: {caller: list of runs, or a list of such lists, one per poll}. jobs: {run id: jobs, or a list of
+        such lists, one per poll}. The current run is 9, of adlc-review.yml, and its t3-approval passed."""
+        current = self.run_of(9, "adlc-review.yml", status="in_progress", created="2026-10-23T20:30:00Z")
+        api = {"GET repos/o/r/actions/runs/9": current,
+               "GET repos/o/r/pulls/5": Seq({"body": {"head": {"sha": h}}} for h in ([head] if isinstance(head, str)
+                                                                                    else head)),
+               "GET repos/o/r/actions/runs/9/jobs": {"jobs": [self.job(91, "success"),
+                                                              self.job(92, None, "rerun-t3-approval", "in_progress")]}}
+        runs = {"adlc.yml": [], "adlc-review.yml": [], **runs}
+        for caller, polls in runs.items():
+            polls = polls if polls and isinstance(polls[0], list) else [polls]
+            if caller == "adlc-review.yml":
+                polls = [p + [current] for p in polls]
+            api[f"GET repos/o/r/actions/workflows/{caller}/runs"] = Seq({"body": {"workflow_runs": p}} for p in polls)
+        for id, polls in jobs.items():
+            polls = polls if polls and isinstance(polls[0], list) else [polls]
+            api[f"GET repos/o/r/actions/runs/{id}/jobs"] = Seq({"body": {"jobs": p}} for p in polls)
+            api.setdefault(f"POST repos/o/r/actions/jobs/{id}1/rerun", None)
+        api.update(extra or {})
+        self.serve(api)
+        return self.run_step([sys.executable, "-I", "-c"], "adlc-review.yml", self.STEP,
+                             POLL_SECONDS="0", WAIT_SECONDS=wait)
+
+    def reran(self):
+        return [p.split("/")[-2] for p in self.requests("POST")]
+
+    def polls(self):
+        return len([p for p in self.requests("GET") if p == "repos/o/r/pulls/5"])
+
+    def test_approval_re_runs_the_failed_approval_jobs_of_earlier_runs(self):
+        foreign = {**self.run_of(4), "path": ".github/workflows/test.yml"}
+        code, out = self.rerun(
+            {"adlc.yml": [self.run_of(1), foreign, self.run_of(5, head="h1")],
+             "adlc-review.yml": [self.run_of(2, "adlc-review.yml"), self.run_of(3, "adlc-review.yml")]},
+            {1: [self.job(11), self.job(12, name="checks")], 2: [self.job(21)], 3: [self.job(31, "success")],
+             4: [self.job(41)], 5: [self.job(51)]})
+        self.assertEqual(code, 0, out)
+        self.assertEqual(sorted(self.reran()), ["11", "21"])
+        self.assertIn("https://github.com/o/r/actions/runs/1", out)
+
+    def test_approval_re_run_skips_a_run_of_another_release(self):
+        old = self.run_of(1, sha="s6", created="2026-10-23T19:00:00Z")
+        code, out = self.rerun({"adlc.yml": [old]}, {1: [self.job(11)]})
+        self.assertEqual(code, 1, out)
+        self.assertEqual(self.reran(), [])
+        self.assertIn("https://github.com/o/r/actions/runs/1", out)
+        self.assertIn("draft", out)
+        # A newer run of the same caller passed, so GitHub shows that result.
+        code, out = self.rerun({"adlc.yml": [old, self.run_of(6)]}, {1: [self.job(11)], 6: [self.job(61, "success")]})
+        self.assertEqual(code, 0, out)
+        self.assertEqual(self.reran(), [])
+        self.assertIn("::notice::", out)
+        self.assertIn("https://github.com/o/r/actions/runs/1", out)
+        # A newer run of the other caller does not count.
+        code, out = self.rerun({"adlc.yml": [old], "adlc-review.yml": [self.run_of(7, "adlc-review.yml")]},
+                               {1: [self.job(11)], 7: [self.job(71, "success")]})
+        self.assertEqual(code, 1, out)
+        # The current run is the newer passed run of an old review run.
+        code, out = self.rerun({"adlc-review.yml": [self.run_of(2, "adlc-review.yml", sha="s6")]}, {2: [self.job(21)]})
+        self.assertEqual(code, 0, out)
+        self.assertEqual(self.reran(), [])
+
+    def test_approval_re_run_waits_only_for_a_failed_or_running_approval(self):
+        # The t3-approval of run 1 runs, then fails while its checks job runs, then the run completes.
+        polls = [[self.run_of(1, status="in_progress")]] * 2 + [[self.run_of(1)]]
+        jobs = [[self.job(11, status="in_progress")], [self.job(11)], [self.job(11)]]
+        code, out = self.rerun({"adlc.yml": polls}, {1: jobs})
+        self.assertEqual(code, 0, out)
+        self.assertEqual(self.reran(), ["11"])
+        self.assertEqual(self.polls(), 3)
+        # A passed t3-approval in a run that still runs: no wait, no re-run.
+        code, out = self.rerun({"adlc.yml": [self.run_of(1, status="in_progress")]},
+                               {1: [self.job(11, "success"), self.job(12, None, "checks", "in_progress")]})
+        self.assertEqual(code, 0, out)
+        self.assertEqual(self.reran(), [])
+        self.assertEqual(self.polls(), 1)
+        # The head moves during the wait.
+        code, out = self.rerun({"adlc.yml": [self.run_of(1, status="in_progress")]},
+                               {1: [self.job(11, status="in_progress")]}, head=["h2", "h2", "h3"])
+        self.assertEqual(code, 0, out)
+        self.assertEqual(self.reran(), [])
+        self.assertEqual(self.polls(), 3)
+        # The wait ends first.
+        code, out = self.rerun({"adlc.yml": [self.run_of(1, status="in_progress")]},
+                               {1: [self.job(11, status="in_progress")]}, wait="0")
+        self.assertEqual(code, 1, out)
+        self.assertEqual(self.reran(), [])
+        self.assertIn("https://github.com/o/r/actions/runs/1", out)
+
+    def test_approval_re_run_counts_a_job_already_running_again(self):
+        refused = {"POST repos/o/r/actions/jobs/11/rerun": Seq([{"status": 403}])}
+        again = {**refused, "GET repos/o/r/actions/runs/1": {**self.run_of(1), "status": "queued"}}
+        code, out = self.rerun({"adlc.yml": [self.run_of(1)]}, {1: [self.job(11)]}, again)
+        self.assertEqual(code, 0, out)
+        self.assertEqual(self.reran(), ["11"])
+        stuck = {**refused, "GET repos/o/r/actions/runs/1": self.run_of(1)}
+        code, out = self.rerun({"adlc.yml": [self.run_of(1)]}, {1: [self.job(11)]}, stuck)
+        self.assertEqual(code, 1, out)
+        self.assertIn("https://github.com/o/r/actions/runs/1", out)
+
+    def test_approval_re_run_stops_when_the_head_moved(self):
+        code, out = self.rerun({"adlc.yml": [self.run_of(1)], "adlc-review.yml": [self.run_of(2, "adlc-review.yml")]},
+                               {1: [self.job(11)], 2: [self.job(21)]}, head="h3")
+        self.assertEqual(code, 0, out)
+        self.assertEqual(self.reran(), [])

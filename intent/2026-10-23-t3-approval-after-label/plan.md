@@ -48,6 +48,10 @@ Date: 2026-10-23. Spec: [spec.md](spec.md).
   not expected. The script then sees only the newest 100.
 - The re-run job waits for up to 30 minutes: 60 polls, each of 3 requests and one more for each run. The `GITHUB_TOKEN` limit is
   1,000 requests per hour per repo ([GitHub docs](https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api#primary-rate-limit-for-github_token-in-github-actions)).
+- The GitHub docs say that an event the `GITHUB_TOKEN` triggers starts no new workflow run, except `workflow_dispatch`
+  and `repository_dispatch` ([GitHub docs](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow)).
+  They do not say whether a re-run that this token asks for starts. If the trial shows that it does not, the red check
+  stays after the approval, and the fix needs a new spec.
 - The ADLC repo does not run its own shared workflows on its PRs. So only the tests and the trial prove the workflow paths.
 
 ## Proof

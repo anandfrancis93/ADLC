@@ -30,7 +30,7 @@ The `t3-approval` check passes when the owner (the `ADLC_OWNER` variable) did on
 The run that a push starts fails `t3-approval` until the owner approves. GitHub keeps that failed check
 after a later run passes. So after the approval, the `rerun-t3-approval` job of `adlc-review.yml`
 re-runs the failed `t3-approval` jobs of the earlier runs on that commit. No one re-runs a job by hand.
-If that job fails, its error names the run whose `t3-approval` to re-run.
+If that job fails, its error says which `t3-approval` jobs to re-run by hand.
 One exception: a T3 PR that was open when its repo moved to a new release ([sync.md](sync.md#a-t3-pr-open-across-a-sync)).
 
 GitHub does not let a PR's author approve it

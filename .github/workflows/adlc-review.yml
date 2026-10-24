@@ -136,10 +136,12 @@ jobs:
           this_run = int(os.environ["GITHUB_RUN_ID"])
           poll, deadline = int(os.environ["POLL_SECONDS"]), time.monotonic() + int(os.environ["WAIT_SECONDS"])
           again = ("requested", "queued", "pending", "waiting", "in_progress")
-          by_hand = "Re-run the failed t3-approval of that run by hand: it keeps the label now."
-          # A re-run of this run skips this job, so each error names the step that clears the red check.
-          sys.excepthook = lambda kind, e, tb: print(f"::error::{e} Re-run the failed t3-approval jobs of the earlier "
-                                                     "runs on this commit by hand: they keep the label now.")
+          by_hand = "Once that run completes, if its t3-approval failed, re-run that job by hand: it keeps the label now."
+          # A re-run of this run skips this job, so each error says which jobs to re-run by hand.
+          sys.excepthook = lambda kind, e, tb: print(
+              f"::error::{e} So no earlier run was re-run. Once each earlier run of this ADLC release on this commit "
+              "completes, re-run its failed t3-approval by hand: it keeps the label now. For a run of the release "
+              'before, see "A T3 PR open across a sync" in docs/sync.md of the ADLC repo.')
 
 
           def api(path, method="GET"):

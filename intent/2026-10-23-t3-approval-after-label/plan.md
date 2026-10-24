@@ -31,7 +31,7 @@ Date: 2026-10-23. Spec: [spec.md](spec.md).
    - Then it re-runs each failed `t3-approval` job of those runs (`POST actions/jobs/{id}/rerun`).
      When a request fails, it reads the run again, and passes when the run is queued or running again.
    - It tries a failed read twice more, one poll interval apart. A re-run of its own run skips it,
-     so each of its errors names the run whose `t3-approval` to re-run by hand.
+     so each of its errors says which `t3-approval` jobs to re-run by hand.
    - For a run of another ADLC commit with a failed `t3-approval`: it passes with a notice when a newer run of the same caller passed `t3-approval`.
      Otherwise it fails, and names that run and the draft step in `docs/sync.md`.
 7. Caller templates: `actions: read` in `adlc.yml`, `actions: write` in `adlc-review.yml`. Update the comments of both.

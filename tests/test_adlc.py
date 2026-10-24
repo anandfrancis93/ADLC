@@ -1034,6 +1034,7 @@ class RerunStep(StepScript):
         self.assertEqual(self.reran(), [])
         self.assertIn("::error::", out)
         self.assertIn("by hand", out)
+        self.assertIn("docs/sync.md", out)
 
     def test_approval_re_run_counts_a_job_already_running_again(self):
         refused = {"POST repos/o/r/actions/jobs/11/rerun": Seq([{"status": 403}])}

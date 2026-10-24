@@ -284,6 +284,8 @@ class T3Approved(unittest.TestCase):
         self.assertEqual(self.check(events=[self.label("labeled", "anand"), pushed]), 1)
         self.assertEqual(self.check(events=[self.label("labeled", "anand", at="2026-10-22T05:20:00Z"), pushed]), 1)
         self.assertEqual(self.check(events=[pushed, self.label("labeled", "anand", at="2026-10-22T05:30:00Z")]), 0)
+        newer = {**pushed, "created_at": "2026-10-22T05:40:00Z"}
+        self.assertEqual(self.check(events=[pushed, self.label("labeled", "anand", at="2026-10-22T05:30:00Z"), newer]), 1)
         older = {**pushed, "created_at": "2026-10-22T04:00:00Z"}
         self.assertEqual(self.check(events=[older, pushed, self.label("labeled", "anand", at="2026-10-22T05:30:00Z")]), 0)
         self.assertEqual(self.check(events=[older, self.label("labeled", "anand", at="2026-10-22T04:30:00Z")]), 1)
@@ -772,9 +774,12 @@ class Workflows(unittest.TestCase):
         for name in ("adlc.yml", "adlc-review.yml"):
             with open(os.path.join(ROOT, ".github", "workflows", name)) as f:
                 head = f.read().split("\njobs:\n", 1)[0]
-            self.assertNotIn("actions: write", re.sub(r"(?m)^#.*\n", "", head), name)
-            for other in self.jobs(name) - {"rerun-t3-approval"}:
-                self.assertNotIn("actions: write", self.job(name, other), f"{name}: {other}")
+            # With no workflow-level block, a job without its own block gets all that the caller grants.
+            self.assertNotRegex(head, r"(?m)^permissions:", name)
+            for other in self.jobs(name):
+                self.assertRegex(self.job(name, other), r"(?m)^    permissions:\n      \w", f"{name}: {other}")
+                if other != "rerun-t3-approval":
+                    self.assertNotIn("actions: write", self.job(name, other), f"{name}: {other}")
         callers = os.path.join(ROOT, "templates", "github", "workflows")
         with open(os.path.join(callers, "adlc-review.yml")) as f:
             self.assertIn("\n  actions: write\n", f.read().split("\njobs:\n", 1)[0])
@@ -1016,6 +1021,19 @@ class RerunStep(StepScript):
         self.assertEqual(code, 1, out)
         self.assertEqual(self.reran(), [])
         self.assertIn("https://github.com/o/r/actions/runs/1", out)
+        self.assertIn("by hand", out)
+
+    def test_approval_re_run_tries_a_failed_read_again(self):
+        flaky = {"GET repos/o/r/pulls/5": Seq([{"status": 502}, {"status": 502}, {"body": {"head": {"sha": "h2"}}}])}
+        code, out = self.rerun({"adlc.yml": [self.run_of(1)]}, {1: [self.job(11)]}, flaky)
+        self.assertEqual(code, 0, out)
+        self.assertEqual(self.reran(), ["11"])
+        down = {"GET repos/o/r/pulls/5": Seq([{"status": 502}] * 3 + [{"body": {"head": {"sha": "h2"}}}])}
+        code, out = self.rerun({"adlc.yml": [self.run_of(1)]}, {1: [self.job(11)]}, down)
+        self.assertEqual(code, 1, out)
+        self.assertEqual(self.reran(), [])
+        self.assertIn("::error::", out)
+        self.assertIn("by hand", out)
 
     def test_approval_re_run_counts_a_job_already_running_again(self):
         refused = {"POST repos/o/r/actions/jobs/11/rerun": Seq([{"status": 403}])}

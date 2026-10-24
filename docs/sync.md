@@ -94,6 +94,8 @@ A re-run of one job uses the shared workflow of the run's first attempt
 ([GitHub docs](https://docs.github.com/en/actions/reference/workflows-and-actions/reusing-workflow-configurations#behavior-of-reusable-workflows-when-re-running-jobs)),
 so the old drop step would remove the label again. So `rerun-t3-approval` does not re-run that run, and fails with its link.
 After the owner approves, move the PR to draft and back once. The new `ADLC` run uses the new release and passes.
+The red `rerun-t3-approval` check stays until the next label or review event. It is not a required check,
+so it does not block the merge.
 
 ### First sync of a repo set up by copying (v0.3.0 or earlier)
 

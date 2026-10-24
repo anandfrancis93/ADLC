@@ -4,7 +4,7 @@
 # The caller's job id is "adlc" in both callers, so t3-approval here reports under the
 # same check name as in adlc.yml. The checks job runs only in adlc.yml.
 # After the owner approves, rerun-t3-approval re-runs the failed t3-approval of the earlier runs.
-# The caller grants actions: write for that job alone.
+# The caller grants actions: write to this whole workflow. The job blocks keep it to rerun-t3-approval.
 name: ADLC review
 
 on:
@@ -136,13 +136,21 @@ jobs:
           this_run = int(os.environ["GITHUB_RUN_ID"])
           poll, deadline = int(os.environ["POLL_SECONDS"]), time.monotonic() + int(os.environ["WAIT_SECONDS"])
           again = ("requested", "queued", "pending", "waiting", "in_progress")
+          by_hand = "Re-run the failed t3-approval of that run by hand: it keeps the label now."
+          # A re-run of this run skips this job, so each error names the step that clears the red check.
+          sys.excepthook = lambda kind, e, tb: print(f"::error::{e} Re-run the failed t3-approval jobs of the earlier "
+                                                     "runs on this commit by hand: they keep the label now.")
 
 
           def api(path, method="GET"):
-              p = subprocess.run(["gh", "api", "-X", method, f"repos/{repo}/{path}"], capture_output=True, text=True)
-              if p.returncode:
-                  raise RuntimeError(p.stderr.strip())
-              return json.loads(p.stdout or "null")
+              """A GitHub API request. A read that fails is tried twice more, one poll interval apart."""
+              for tries_left in reversed(range(3 if method == "GET" else 1)):
+                  p = subprocess.run(["gh", "api", "-X", method, f"repos/{repo}/{path}"], capture_output=True, text=True)
+                  if not p.returncode:
+                      return json.loads(p.stdout or "null")
+                  if tries_left:
+                      time.sleep(poll)
+              raise RuntimeError(p.stderr.strip())
 
 
           def release(run):
@@ -177,7 +185,8 @@ jobs:
                   break
               if time.monotonic() >= deadline:
                   for r in wait:
-                      print(f"::error::Run {r['html_url']} did not complete in time, so its t3-approval was not re-run.")
+                      print(f"::error::Run {r['html_url']} did not complete in time, so its t3-approval was not re-run. "
+                            + by_hand)
                   sys.exit(1)
               time.sleep(poll)
 
@@ -192,7 +201,7 @@ jobs:
                   if api(f"actions/runs/{r['id']}")["status"] in again:
                       print(f"Run {r['html_url']} is already running again.")
                   else:
-                      print(f"::error::Could not re-run t3-approval of run {r['html_url']}: {e}")
+                      print(f"::error::Could not re-run t3-approval of run {r['html_url']}: {e} " + by_hand)
                       failed = True
           for r, j in found:
               if release(r) == mine or j["conclusion"] != "failure":

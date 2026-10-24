@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.7.0] - 2026-10-24
+
+_To upgrade a repo, merge its sync PR. Start each new T3 change in an `intent/` folder, as the Breaking line says. A T3 PR that is open when the sync PR merges needs one draft toggle after the approval (`docs/sync.md`)._
+
+### Changed
+
+- **Breaking:** keep each T3 change's intent, spec and plan as three files in `intent/YYYY-MM-DD-<slug>/`, accepted in that order, with the plan as the first commit of the code PR; old `docs/specs/` files stay where they are ([`9190b6d`](https://github.com/anandfrancis93/ADLC/commit/9190b6d)) ([#3](https://github.com/anandfrancis93/ADLC/pull/3))
+
+### Fixed
+
+- Let a T3 PR merge once the owner approves, with no re-run and no draft toggle: a re-run keeps a label added after the push, and the new `rerun-t3-approval` job re-runs the failed approval checks of the earlier runs, so the callers now grant `actions: read` and `actions: write` ([`3ec3948`](https://github.com/anandfrancis93/ADLC/commit/3ec3948)) ([#6](https://github.com/anandfrancis93/ADLC/pull/6))
+- Count the `adlc:t3-approved` label only when it came after the newest force push ([`3ec3948`](https://github.com/anandfrancis93/ADLC/commit/3ec3948)) ([#6](https://github.com/anandfrancis93/ADLC/pull/6))
+
 ## [0.6.0] - 2026-10-22
 
 _To upgrade a repo, merge its sync PR. In a repo with branch protection, change the required checks first, as the Breaking line says. The sync PR waits on the old checks until then._
@@ -95,6 +108,7 @@ _To upgrade a repo, sync it from v0.4.0 as `docs/sync.md` describes._
 
 _First release._
 
+[0.7.0]: https://github.com/anandfrancis93/ADLC/releases/tag/v0.7.0
 [0.6.0]: https://github.com/anandfrancis93/ADLC/releases/tag/v0.6.0
 [0.5.0]: https://github.com/anandfrancis93/ADLC/releases/tag/v0.5.0
 [0.4.0]: https://github.com/anandfrancis93/ADLC/releases/tag/v0.4.0

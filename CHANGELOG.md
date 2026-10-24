@@ -2,15 +2,22 @@
 
 ## [0.7.0] - 2026-10-24
 
-_To upgrade a repo, merge its sync PR. Start each new T3 change in an `intent/` folder, as the Breaking line says. A T3 PR that is open when the sync PR merges needs one draft toggle after the approval (`docs/sync.md`)._
+_To upgrade a repo, do what the Breaking line asks in its sync PR, then merge it. A T3 PR that is open when the sync PR merges needs one draft toggle after the approval (`docs/sync.md`)._
 
 ### Changed
 
-- **Breaking:** keep each T3 change's intent, spec and plan as three files in `intent/YYYY-MM-DD-<slug>/`, accepted in that order, with the plan as the first commit of the code PR; old `docs/specs/` files stay where they are ([`9190b6d`](https://github.com/anandfrancis93/ADLC/commit/9190b6d)) ([#3](https://github.com/anandfrancis93/ADLC/pull/3))
+- **Breaking:** start each new T3 change as `intent/YYYY-MM-DD-<slug>/intent.md` in its own PR, then `spec.md` in its own PR, then `plan.md` as the first commit of the code PR; `templates/intent/` holds the three templates and replaces `templates/spec.md`; in the sync PR, update the maintainer line and the Compliance lines of your `REVIEW.md` from `templates/REVIEW.md`, because sync never changes an existing `REVIEW.md`; old specs in `docs/specs/` stay where they are ([`9190b6d`](https://github.com/anandfrancis93/ADLC/commit/9190b6d)) ([#3](https://github.com/anandfrancis93/ADLC/pull/3))
+- Check a T3 change against its `spec.md` and `plan.md` in the `adlc-review` skill, and flag a departure from the plan ([`9190b6d`](https://github.com/anandfrancis93/ADLC/commit/9190b6d)) ([#3](https://github.com/anandfrancis93/ADLC/pull/3))
+- Say in `docs/sync.md` that the ADLC repo is public, so any repo can call its workflows with no Access setting ([`004249f`](https://github.com/anandfrancis93/ADLC/commit/004249f)) ([#2](https://github.com/anandfrancis93/ADLC/pull/2))
+
+### Added
+
+- Name the roles in `docs/stages.md`: product owner, tech lead, engineer and owner; the tech lead accepts each T3 plan and maintains `REVIEW.md` ([`9190b6d`](https://github.com/anandfrancis93/ADLC/commit/9190b6d)) ([#3](https://github.com/anandfrancis93/ADLC/pull/3))
+- Rate last month's review findings in the monthly retire run, and propose `REVIEW.md` edits for the tech lead to approve ([`9190b6d`](https://github.com/anandfrancis93/ADLC/commit/9190b6d)) ([#3](https://github.com/anandfrancis93/ADLC/pull/3))
 
 ### Fixed
 
-- Let a T3 PR merge once the owner approves, with no re-run and no draft toggle: a re-run keeps a label added after the push, and the new `rerun-t3-approval` job re-runs the failed approval checks of the earlier runs, so the callers now grant `actions: read` and `actions: write` ([`3ec3948`](https://github.com/anandfrancis93/ADLC/commit/3ec3948)) ([#6](https://github.com/anandfrancis93/ADLC/pull/6))
+- Let a T3 PR merge once the owner approves, with no re-run by hand: a re-run keeps a label added after the push, and the new `rerun-t3-approval` job re-runs the failed approval checks of the earlier runs; the `adlc.yml` caller grants `actions: read` for the drop step, and the `adlc-review.yml` caller grants `actions: write`, which only `rerun-t3-approval` uses; the one exception is a T3 PR open across the sync ([`3ec3948`](https://github.com/anandfrancis93/ADLC/commit/3ec3948)) ([#6](https://github.com/anandfrancis93/ADLC/pull/6))
 - Count the `adlc:t3-approved` label only when it came after the newest force push ([`3ec3948`](https://github.com/anandfrancis93/ADLC/commit/3ec3948)) ([#6](https://github.com/anandfrancis93/ADLC/pull/6))
 
 ## [0.6.0] - 2026-10-22

@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.8.0] - 2026-10-24
+
+_To upgrade a repo, do what the Breaking lines ask in its sync PR, then merge it. A T3 PR that is open when the sync PR merges needs its branch updated once, with `gh pr update-branch <number>`, before the owner approves it (`docs/sync.md`)._
+
+### Changed
+
+- Show a T3 PR that waits for the owner as a pending commit status `adlc / t3-approval`, not a failed run, so GitHub sends no failure email; the job `t3-approval` becomes `tier`, which posts the status, and the owner's label turns it to success with no re-run ([`c9e17f9`](https://github.com/anandfrancis93/ADLC/commit/c9e17f9)) ([#10](https://github.com/anandfrancis93/ADLC/pull/10))
+- **Breaking:** in the sync PR, change the repo-owned files and agent steps that name `rerun-t3-approval`, the draft toggle, `gh pr checks` (with or without `--watch`) on a T3 PR before the approval, or `adlc / t3-approval` as a check run; to wait for the other checks, use `gh run watch` on the `ADLC` run ([`c9e17f9`](https://github.com/anandfrancis93/ADLC/commit/c9e17f9)) ([#10](https://github.com/anandfrancis93/ADLC/pull/10))
+- **Breaking:** grant `statuses: write` in the callers, and `actions: read` in place of `actions: write` in the `adlc-review.yml` caller; the sync PR writes both ([`c9e17f9`](https://github.com/anandfrancis93/ADLC/commit/c9e17f9)) ([#10](https://github.com/anandfrancis93/ADLC/pull/10))
+- **Breaking:** replace `adlc.py t3-approved` with `adlc.py t3-status --tier TIER`, which prints the status as JSON and exits 0 while a T3 change waits; change each repo-owned file that calls the old command ([`c9e17f9`](https://github.com/anandfrancis93/ADLC/commit/c9e17f9)) ([#10](https://github.com/anandfrancis93/ADLC/pull/10))
+- Run the ADLC's own `adlc.py` at the release in the `tier` job, and no file from the PR, because the job can write statuses ([`c9e17f9`](https://github.com/anandfrancis93/ADLC/commit/c9e17f9)) ([#10](https://github.com/anandfrancis93/ADLC/pull/10))
+- Have the agent check the owner's label or review itself before it merges a T3 PR (the `adlc-release` skill), because any workflow of a repo can post a commit status ([`c9e17f9`](https://github.com/anandfrancis93/ADLC/commit/c9e17f9)) ([#10](https://github.com/anandfrancis93/ADLC/pull/10))
+- Post a passing `adlc / t3-approval` for each Dependabot PR from `adlc-dependabot.yml`, as the skipped job gave before ([`c9e17f9`](https://github.com/anandfrancis93/ADLC/commit/c9e17f9)) ([#10](https://github.com/anandfrancis93/ADLC/pull/10))
+
 ## [0.7.0] - 2026-10-24
 
 _To upgrade a repo, do what the Breaking line asks in its sync PR, then merge it. A T3 PR that is open when the sync PR merges needs one draft toggle after the approval (`docs/sync.md`)._
@@ -115,6 +129,7 @@ _To upgrade a repo, sync it from v0.4.0 as `docs/sync.md` describes._
 
 _First release._
 
+[0.8.0]: https://github.com/anandfrancis93/ADLC/releases/tag/v0.8.0
 [0.7.0]: https://github.com/anandfrancis93/ADLC/releases/tag/v0.7.0
 [0.6.0]: https://github.com/anandfrancis93/ADLC/releases/tag/v0.6.0
 [0.5.0]: https://github.com/anandfrancis93/ADLC/releases/tag/v0.5.0

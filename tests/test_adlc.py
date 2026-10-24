@@ -774,7 +774,11 @@ class Workflows(unittest.TestCase):
         self.assertNotIn("continue-on-error", job)
         # Without pipefail, a failed git diff gives an empty list, which is T1.
         self.assertIn("      - id: tier\n        shell: bash\n        working-directory: pr\n", job)
-        last = re.split(r"(?m)^      - ", job)[-1]
+        steps = re.split(r"(?m)^      - ", job)
+        # The status step runs for each tier: with an if, T1 and T2 PRs would get no status and stay blocked.
+        report = next(step for step in steps if step.startswith("name: Report the owner's approval\n"))
+        self.assertNotRegex(report, r"(?m)^        if:")
+        last = steps[-1]
         self.assertTrue(last.startswith("name: Block the merge when this job fails\n"), last)
         self.assertIn("\n        if: failure() || cancelled()\n", last)
 
@@ -801,6 +805,20 @@ class Workflows(unittest.TestCase):
             self.assertNotIn(".adlc/", script)
         self.assertNotIn("working-directory: pr", job.replace("      - id: tier\n        shell: bash\n"
                                                              "        working-directory: pr\n", ""))
+
+    def test_tier_job_names_the_repo_of_each_gh_command(self):
+        """Both checkouts of tier use path:, so the workspace is not a git clone, and gh cannot find the repo from git.
+        gh api needs no repo: each of its paths names it."""
+        for name in ("adlc.yml", "adlc-review.yml"):
+            for step in re.split(r"(?m)^      - ", self.job(name, "tier"))[1:]:
+                if "run: |\n" not in step:
+                    continue
+                for line in step.split("run: |\n", 1)[1].splitlines():
+                    for cmd in re.findall(r"\bgh (?!api\b)[a-z]+ [a-z-]+", line):
+                        self.assertTrue("\n          GH_REPO: ${{ github.repository }}\n" in step or "--repo" in line,
+                                        f"{name}: {cmd}")
+        # The test sees the commands it must.
+        self.assertIn("gh pr edit", self.job("adlc.yml", "tier"))
 
     def test_label_changes_rerun_the_review_caller(self):
         with open(os.path.join(ROOT, "templates", "github", "workflows", "adlc-review.yml")) as f:

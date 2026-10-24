@@ -88,9 +88,11 @@ jobs:
           tier=$(git diff --name-only "$BASE...$HEAD" | python3 -I ../adlc-release/scripts/adlc.py tier --explain)
           echo "tier=$tier" >> "$GITHUB_OUTPUT"
           echo "Tier: $tier" >> "$GITHUB_STEP_SUMMARY"
+      # Both checkouts are in folders of their own, so the workspace is not a git clone, and gh needs GH_REPO.
       - name: Label the PR with its tier
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
           PR: ${{ github.event.pull_request.number }}
           TIER: ${{ steps.tier.outputs.tier }}
         run: |

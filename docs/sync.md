@@ -94,7 +94,7 @@ A T3 PR that was open when the repo merged a sync PR can hold the runs of the re
 Before 0.8.0, `adlc / t3-approval` was a job, and its failed check stays on that commit.
 GitHub requires both to pass when a check and a commit status share a name
 ([GitHub docs](https://docs.github.com/en/pull-requests/how-tos/merge-and-close-pull-requests/troubleshooting-required-status-checks)).
-So update the PR's branch from `main` once, for example with the Update branch button, before the owner approves.
+So update the PR's branch from `main` once, with `gh pr update-branch <number>`, before the owner approves.
 The new commit gets runs of the new release, and only the status.
 An update after the approval makes a new commit, so CI drops the label, and the owner approves again.
 

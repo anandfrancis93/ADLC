@@ -247,8 +247,10 @@ class T3Approved(unittest.TestCase):
             files[name] = os.path.join(d, name + ".json")
             with open(files[name], "w") as f:
                 json.dump(list(data), f)
-        return run(["t3-approved", "--owner", owner, "--head", "h2", "--since", since,
-                    "--reviews", files["reviews"], "--events", files["events"]])[0]
+        code, out, err = run(["t3-status", "--tier", "T3", "--owner", owner, "--head", "h2", "--since", since,
+                              "--reviews", files["reviews"], "--events", files["events"]])
+        self.assertEqual(code, 0, err)
+        return 0 if json.loads(out)["state"] == "success" else 1
 
     def label(self, event, login, name="adlc:t3-approved", at="2026-10-22T05:10:00Z"):
         return {"event": event, "actor": {"login": login}, "label": {"name": name}, "created_at": at}
@@ -296,6 +298,45 @@ class T3Approved(unittest.TestCase):
 
     def test_no_approval_fails(self):
         self.assertEqual(self.check(), 1)
+
+
+class T3Status(unittest.TestCase):
+    def status(self, tier, owner="anand", events=None):
+        args = ["t3-status", "--tier", tier, "--owner", owner, "--head", "h2", "--since", "2026-10-22T05:00:00Z"]
+        if events is not None:
+            d = tempfile.mkdtemp()
+            for name, text in (("reviews", "[]"), ("events", events)):
+                with open(os.path.join(d, name), "w") as f:
+                    f.write(text)
+            args += ["--reviews", os.path.join(d, "reviews"), "--events", os.path.join(d, "events")]
+        return run(args)
+
+    def test_t3_status_reports_each_tier(self):
+        for tier in ("T1", "T2"):
+            code, out, err = self.status(tier)
+            self.assertEqual(code, 0, err)
+            self.assertEqual(json.loads(out)["state"], "success", tier)
+        label = {"event": "labeled", "actor": {"login": "anand"}, "label": {"name": "adlc:t3-approved"},
+                 "created_at": "2026-10-22T05:10:00Z"}
+        for events, state in (("[]", "pending"), (json.dumps([label]), "success")):
+            code, out, err = self.status("T3", events=events)
+            self.assertEqual(code, 0, err)
+            self.assertEqual(json.loads(out)["state"], state, events)
+        long = "a" * 39
+        for tier, owner, events in (("T1", long, None), ("T3", long, "[]"), ("T3", long, json.dumps([label])),
+                                    ("T3", "", "[]")):
+            code, out, err = self.status(tier, owner, events)
+            status = json.loads(out)
+            self.assertEqual(set(status), {"state", "description"})
+            # The GitHub statuses API takes a description of at most 140 characters.
+            self.assertLessEqual(len(status["description"]), 140, status)
+
+    def test_t3_status_fails_on_a_bad_file(self):
+        """An error must fail the job, not read as an approval that is still to come."""
+        self.assertEqual(self.status("T3", events="[]")[0], 0)
+        code, out, err = self.status("T3", events="not json")
+        self.assertNotEqual(code, 0)
+        self.assertEqual(out, "")
 
 
 if __name__ == "__main__":
@@ -700,7 +741,7 @@ class Manifest(unittest.TestCase):
         self.assertEqual(len(callers), 5)
         for source in callers:
             with open(os.path.join(ROOT, source)) as f:
-                uses = re.findall(r"uses: (\S+)", f.read())
+                uses = re.findall(r"(?m)^\s+uses: (\S+)", f.read())
             name = os.path.basename(source)
             self.assertEqual(uses, [f"anandfrancis93/ADLC/.github/workflows/{name}@v{{{{ADLC_VERSION}}}}"], source)
             with open(os.path.join(ROOT, ".github", "workflows", name)) as f:
@@ -708,8 +749,8 @@ class Manifest(unittest.TestCase):
 
 
 class Workflows(unittest.TestCase):
-    """A job skipped on a review run reports success under its check name, so required checks
-    other than t3-approval must never run on pull_request_review."""
+    """A job skipped on a review run reports success under its check name, so the required
+    checks job must never run on pull_request_review."""
 
     def jobs(self, name):
         with open(os.path.join(ROOT, ".github", "workflows", name)) as f:
@@ -722,26 +763,53 @@ class Workflows(unittest.TestCase):
         # A job ends at the next job, or at the comment above it.
         return re.search(rf"(?ms)^  {job}:\n.*?(?=^  #|^  [a-z0-9-]+:\n|\Z)", text.split("\njobs:\n", 1)[1]).group(0)
 
-    def test_t3_approval_is_the_same_in_both_workflows_and_fails_when_the_tier_fails(self):
-        job = self.job("adlc.yml", "t3-approval")
-        self.assertEqual(job, self.job("adlc-review.yml", "t3-approval"))
-        # The tier and the approval are steps of one job, so a failed tier fails the check.
-        # In a separate job, the approval would be skipped, and a skipped check counts as passed.
+    def test_tier_job_is_the_same_in_both_workflows_and_never_needs_approval_to_pass(self):
+        job = self.job("adlc.yml", "tier")
+        self.assertEqual(job, self.job("adlc-review.yml", "tier"))
+        # The tier and the approval are steps of one job, so a failed tier posts a failed status.
         self.assertIn("adlc.py tier --explain", job)
-        self.assertIn("adlc.py t3-approved", job)
+        self.assertIn("adlc.py t3-status", job)
+        self.assertNotIn("t3-approved --owner", job)
         self.assertNotIn("needs:", job)
         self.assertNotIn("continue-on-error", job)
         # Without pipefail, a failed git diff gives an empty list, which is T1.
-        self.assertIn("      - id: tier\n        shell: bash\n", job)
+        self.assertIn("      - id: tier\n        shell: bash\n        working-directory: pr\n", job)
+        last = re.split(r"(?m)^      - ", job)[-1]
+        self.assertTrue(last.startswith("name: Block the merge when this job fails\n"), last)
+        self.assertIn("\n        if: failure() || cancelled()\n", last)
+
+    def test_tier_job_runs_no_file_from_the_pr(self):
+        """The job can write statuses, so it runs only the ADLC's own adlc.py, at the commit of this workflow."""
+        job = self.job("adlc.yml", "tier")
+        steps = re.split(r"(?m)^      - ", job)[1:]
+        uses = [step for step in steps if step.startswith("uses: ")]
+        self.assertEqual(len(uses), 2)
+        for step in uses:
+            self.assertTrue(step.startswith("uses: actions/checkout@"), step)
+            self.assertIn("\n          persist-credentials: false\n", step)
+        self.assertIn("\n          repository: ${{ job.workflow_repository }}\n          ref: ${{ job.workflow_sha }}\n"
+                      "          path: adlc-release\n", uses[0])
+        self.assertIn("\n          path: pr\n", uses[1])
+        # Each run script, without the comments above the next step.
+        runs = ["\n".join(line for line in step.split("run: |\n", 1)[1].splitlines() if not line.lstrip().startswith("#"))
+                for step in steps if "run: |\n" in step]
+        calls = re.findall(r"python3[^|\n]*", "\n".join(runs))
+        self.assertEqual(len(calls), 2, calls)
+        for call in calls:
+            self.assertRegex(call, r"^python3 -I (\.\./)?adlc-release/scripts/adlc\.py ", call)
+        for script in runs:
+            self.assertNotIn(".adlc/", script)
+        self.assertNotIn("working-directory: pr", job.replace("      - id: tier\n        shell: bash\n"
+                                                             "        working-directory: pr\n", ""))
 
     def test_label_changes_rerun_the_review_caller(self):
         with open(os.path.join(ROOT, "templates", "github", "workflows", "adlc-review.yml")) as f:
             self.assertIn("  pull_request:\n    types: [labeled, unlabeled]\n", f.read())
-        self.assertIn("synchronize", self.job("adlc.yml", "t3-approval"))
+        self.assertIn("synchronize", self.job("adlc.yml", "tier"))
 
     def test_review_runs_only_review_jobs(self):
-        self.assertEqual(self.jobs("adlc-review.yml"), {"t3-approval", "review-budget", "rerun-t3-approval"})
-        self.assertEqual(self.jobs("adlc.yml"), {"t3-approval", "checks"})
+        self.assertEqual(self.jobs("adlc-review.yml"), {"tier", "review-budget"})
+        self.assertEqual(self.jobs("adlc.yml"), {"tier", "checks"})
         with open(os.path.join(ROOT, "templates", "github", "workflows", "adlc.yml")) as f:
             self.assertNotIn("pull_request_review", f.read())
 
@@ -764,29 +832,44 @@ class Workflows(unittest.TestCase):
         # The PR's code runs in this job, so its token can only read.
         self.assertIn("\n    permissions:\n      contents: read\n    steps:\n", self.job("adlc.yml", "checks"))
 
-    def test_only_the_re_run_job_can_write_actions(self):
-        job = self.job("adlc-review.yml", "rerun-t3-approval")
-        self.assertIn("\n    needs: t3-approval\n", job)
-        # Re-running t3-approval also re-runs this job, at attempt 2, so the attempt check stops a chain.
-        self.assertIn("\n    if: needs.t3-approval.outputs.tier == 'T3' && github.run_attempt == '1'\n", job)
-        self.assertIn("\n    permissions:\n      actions: write\n      contents: read\n      pull-requests: read\n", job)
-        self.assertNotIn("checkout", job)
+    def test_only_the_tier_jobs_write_statuses(self):
+        tier_scopes = ("\n    permissions:\n      actions: read\n      checks: read\n      contents: read\n"
+                       "      issues: write\n      pull-requests: write\n      statuses: write\n")
         for name in ("adlc.yml", "adlc-review.yml"):
             with open(os.path.join(ROOT, ".github", "workflows", name)) as f:
                 head = f.read().split("\njobs:\n", 1)[0]
             # With no workflow-level block, a job without its own block gets all that the caller grants.
             self.assertNotRegex(head, r"(?m)^permissions:", name)
+            self.assertIn(tier_scopes, self.job(name, "tier"), name)
             for other in self.jobs(name):
-                self.assertRegex(self.job(name, other), r"(?m)^    permissions:\n      \w", f"{name}: {other}")
-                if other != "rerun-t3-approval":
-                    self.assertNotIn("actions: write", self.job(name, other), f"{name}: {other}")
+                job = self.job(name, other)
+                self.assertRegex(job, r"(?m)^    permissions:\n      \w", f"{name}: {other}")
+                self.assertNotIn("actions: write", job, f"{name}: {other}")
+                if other != "tier":
+                    self.assertNotIn("statuses: write", job, f"{name}: {other}")
         callers = os.path.join(ROOT, "templates", "github", "workflows")
-        with open(os.path.join(callers, "adlc-review.yml")) as f:
-            self.assertIn("\n  actions: write\n", f.read().split("\njobs:\n", 1)[0])
-        with open(os.path.join(callers, "adlc.yml")) as f:
-            head = f.read().split("\njobs:\n", 1)[0]
-        self.assertIn("\n  actions: read\n", head)
-        self.assertNotIn("actions: write", head)
+        for name in ("adlc.yml", "adlc-review.yml"):
+            with open(os.path.join(callers, name)) as f:
+                head = f.read().split("\njobs:\n", 1)[0]
+            self.assertIn("\n  actions: read\n", head, name)
+            self.assertIn("\n  statuses: write\n", head, name)
+            self.assertNotIn("actions: write", head, name)
+        for path in (os.path.join(callers, "adlc-dependabot.yml"),
+                     os.path.join(ROOT, ".github", "workflows", "adlc-dependabot.yml")):
+            with open(path) as f:
+                self.assertIn("\n  statuses: write\n", f.read().split("\njobs:\n", 1)[0], path)
+
+    def test_one_status_name_everywhere(self):
+        """Each repo requires adlc / t3-approval, the name the check had as a job in a caller job called adlc."""
+        for name in ("adlc.yml", "adlc-review.yml", "adlc-dependabot.yml"):
+            with open(os.path.join(ROOT, ".github", "workflows", name)) as f:
+                text = f.read()
+            self.assertIn("/statuses/$HEAD", text, name)
+            self.assertEqual(set(re.findall(r'-f context="([^"]*)"', text)), {"adlc / t3-approval"}, name)
+            self.assertEqual(text.count("/statuses/"), len(re.findall(r'-f context="', text)), name)
+        for name in ("adlc.yml", "adlc-review.yml"):
+            with open(os.path.join(ROOT, "templates", "github", "workflows", name)) as f:
+                self.assertIn("\njobs:\n  adlc:\n", f.read(), name)
 
 
 def step_script(workflow, name):
@@ -806,17 +889,21 @@ def step_script(workflow, name):
 
 # Answers fixed GitHub API requests from api.json: {"METHOD path": [answer, ...]}, the path without its query.
 # Each request takes the next answer of its key, and the last answer repeats. An answer is {"body": ...},
-# or {"status": 404} for an error. Each request goes to log.jsonl. --jq runs jq -r, as gh prints strings raw.
+# or {"status": 404} for an error. Each request goes to log.jsonl, with its -f fields.
+# --jq runs jq -r, as gh prints strings raw.
 FAKE_API_GH = r"""
 import json, os, subprocess, sys
 state = os.environ["FAKE_GH_STATE"]
 args = sys.argv[1:]
 if args[:1] != ["api"]:
     sys.exit("fake gh: unexpected " + " ".join(args))
-method, jq, rest, i = "GET", None, [], 1
+method, jq, rest, fields, i = "GET", None, [], {}, 1
 while i < len(args):
     if args[i] in ("-X", "--method"):
         method, i = args[i + 1], i + 2
+    elif args[i] in ("-f", "-F", "--raw-field", "--field"):
+        key, _, value = args[i + 1].partition("=")
+        fields[key], i = value, i + 2
     elif args[i] in ("-q", "--jq"):
         jq, i = args[i + 1], i + 2
     elif args[i] == "--paginate":
@@ -826,7 +913,7 @@ while i < len(args):
         i += 1
 path = rest[0]
 with open(os.path.join(state, "log.jsonl"), "a") as f:
-    f.write(json.dumps({"method": method, "path": path}) + "\n")
+    f.write(json.dumps({"method": method, "path": path, "fields": fields}) + "\n")
 key = method + " " + path.split("?")[0]
 with open(os.path.join(state, "api.json")) as f:
     answers = json.load(f).get(key)
@@ -881,8 +968,13 @@ class StepScript(unittest.TestCase):
             log = [json.loads(line) for line in f]
         return [e["path"] for e in log if method in (None, e["method"])]
 
-    def run_step(self, command, workflow, step, **env):
-        p = subprocess.run([*command, step_script(workflow, step)], capture_output=True, text=True,
+    def posts(self):
+        """The fields of each POST, in order."""
+        with open(os.path.join(self.state, "log.jsonl")) as f:
+            return [e["fields"] for e in map(json.loads, f) if e["method"] == "POST"]
+
+    def run_step(self, command, workflow, step, cwd=None, **env):
+        p = subprocess.run([*command, step_script(workflow, step)], capture_output=True, text=True, cwd=cwd,
                            env={**os.environ, **self.env, **env})
         return p.returncode, p.stdout + p.stderr
 
@@ -919,136 +1011,84 @@ class DropStep(StepScript):
         self.assertEqual(self.drop([]), [self.LABEL])
 
 
-class RerunStep(StepScript):
-    STEP = "Re-run the failed approval checks of earlier runs"
+BASH = ["bash", "--noprofile", "--norc", "-eo", "pipefail", "-c"]
+RUN_URL = "https://github.com/o/r/actions/runs/9"
 
-    def run_of(self, id, caller="adlc.yml", status="completed", sha="s7", created="2026-10-23T20:00:00Z", head="h2"):
-        return {"id": id, "path": f".github/workflows/{caller}", "head_sha": head, "status": status,
-                "created_at": created, "html_url": f"https://github.com/o/r/actions/runs/{id}",
-                "referenced_workflows": [{"path": f"anandfrancis93/ADLC/.github/workflows/{caller}@v0", "sha": sha,
-                                          "ref": "refs/tags/v0"}]}
 
-    def job(self, id, conclusion="failure", name="t3-approval", status="completed"):
-        return {"id": id, "name": f"adlc / {name}", "status": status,
-                "conclusion": conclusion if status == "completed" else None}
+class StatusStep(StepScript):
+    STEP = "Report the owner's approval"
+    LABEL = {"event": "labeled", "actor": {"login": "anand"}, "label": {"name": "adlc:t3-approved"},
+             "created_at": "2026-10-24T06:10:00Z"}
 
-    def rerun(self, runs, jobs, extra=None, head="h2", wait="60"):
-        """runs: {caller: list of runs, or a list of such lists, one per poll}. jobs: {run id: jobs, or a list of
-        such lists, one per poll}. The current run is 9, of adlc-review.yml, and its t3-approval passed."""
-        current = self.run_of(9, "adlc-review.yml", status="in_progress", created="2026-10-23T20:30:00Z")
-        api = {"GET repos/o/r/actions/runs/9": current,
-               "GET repos/o/r/pulls/5": Seq({"body": {"head": {"sha": h}}} for h in ([head] if isinstance(head, str)
-                                                                                    else head)),
-               "GET repos/o/r/actions/runs/9/jobs": {"jobs": [self.job(91, "success"),
-                                                              self.job(92, None, "rerun-t3-approval", "in_progress")]}}
-        runs = {"adlc.yml": [], "adlc-review.yml": [], **runs}
-        for caller, polls in runs.items():
-            polls = polls if polls and isinstance(polls[0], list) else [polls]
-            if caller == "adlc-review.yml":
-                polls = [p + [current] for p in polls]
-            api[f"GET repos/o/r/actions/workflows/{caller}/runs"] = Seq({"body": {"workflow_runs": p}} for p in polls)
-        for id, polls in jobs.items():
-            polls = polls if polls and isinstance(polls[0], list) else [polls]
-            api[f"GET repos/o/r/actions/runs/{id}/jobs"] = Seq({"body": {"jobs": p}} for p in polls)
-            api.setdefault(f"POST repos/o/r/actions/jobs/{id}1/rerun", None)
-        api.update(extra or {})
-        self.serve(api)
-        return self.run_step([sys.executable, "-I", "-c"], "adlc-review.yml", self.STEP,
-                             POLL_SECONDS="0", WAIT_SECONDS=wait)
+    def report(self, tier="T3", events=Seq([{"body": []}]), reviews=()):
+        """Runs the step in a workspace whose ADLC checkout holds this repo's script."""
+        repo = os.path.join(self.state, "workspace")
+        os.makedirs(os.path.join(repo, "adlc-release", "scripts"), exist_ok=True)
+        shutil.copy(SCRIPT, os.path.join(repo, "adlc-release", "scripts", "adlc.py"))
+        self.serve({"GET repos/o/r/pulls/5/reviews": list(reviews),
+                    "GET repos/o/r/issues/5/events": events,
+                    "GET repos/o/r/commits/h2/check-suites": {"check_suites": [{"created_at": "2026-10-24T06:00:00Z"}]},
+                    "POST repos/o/r/statuses/h2": {}})
+        return self.run_step(BASH, "adlc.yml", self.STEP, cwd=repo, TIER=tier, OWNER="anand", RUN_URL=RUN_URL,
+                             RUNNER_TEMP=self.state)
 
-    def reran(self):
-        return [p.split("/")[-2] for p in self.requests("POST")]
+    def states(self):
+        posts = self.posts()
+        for post in posts:
+            self.assertEqual(post["context"], "adlc / t3-approval")
+            self.assertEqual(post["target_url"], RUN_URL)
+            self.assertLessEqual(len(post["description"]), 140)
+        self.assertEqual({p for p in self.requests("POST")}, {"repos/o/r/statuses/h2"} if posts else set())
+        return [p["state"] for p in posts]
 
-    def polls(self):
-        return len([p for p in self.requests("GET") if p == "repos/o/r/pulls/5"])
-
-    def test_approval_re_runs_the_failed_approval_jobs_of_earlier_runs(self):
-        foreign = {**self.run_of(4), "path": ".github/workflows/test.yml"}
-        code, out = self.rerun(
-            {"adlc.yml": [self.run_of(1), foreign, self.run_of(5, head="h1")],
-             "adlc-review.yml": [self.run_of(2, "adlc-review.yml"), self.run_of(3, "adlc-review.yml")]},
-            {1: [self.job(11), self.job(12, name="checks")], 2: [self.job(21)], 3: [self.job(31, "success")],
-             4: [self.job(41)], 5: [self.job(51)]})
+    def test_waiting_t3_pr_posts_pending_and_passes(self):
+        code, out = self.report()
         self.assertEqual(code, 0, out)
-        self.assertEqual(sorted(self.reran()), ["11", "21"])
-        self.assertIn("https://github.com/o/r/actions/runs/1", out)
+        self.assertEqual(self.states(), ["pending"])
 
-    def test_approval_re_run_skips_a_run_of_another_release(self):
-        old = self.run_of(1, sha="s6", created="2026-10-23T19:00:00Z")
-        code, out = self.rerun({"adlc.yml": [old]}, {1: [self.job(11)]})
+    def test_approved_t3_pr_posts_success(self):
+        code, out = self.report(events=Seq([{"body": [self.LABEL]}]))
+        self.assertEqual(code, 0, out)
+        self.assertEqual(self.states(), ["success"])
+        code, out = self.report(reviews=[{"user": {"login": "anand"}, "state": "APPROVED", "commit_id": "h2"}])
+        self.assertEqual(code, 0, out)
+        self.assertEqual(self.states(), ["success"])
+
+    def test_t1_and_t2_post_success_without_reading_the_pr(self):
+        for tier in ("T1", "T2"):
+            code, out = self.report(tier)
+            self.assertEqual(code, 0, out)
+            self.assertEqual(self.states(), ["success"], tier)
+            self.assertEqual(self.requests("GET"), [], tier)
+
+    def test_status_follows_an_approval_during_the_step(self):
+        code, out = self.report(events=Seq([{"body": []}, {"body": [self.LABEL]}]))
+        self.assertEqual(code, 0, out)
+        self.assertEqual(self.states(), ["pending", "success"])
+
+    def test_status_step_fails_when_the_approval_keeps_changing(self):
+        code, out = self.report(events=Seq([{"body": []}, {"body": [self.LABEL]}] * 3))
         self.assertEqual(code, 1, out)
-        self.assertEqual(self.reran(), [])
-        self.assertIn("https://github.com/o/r/actions/runs/1", out)
-        self.assertIn("draft", out)
-        # A newer run of the same caller passed, so GitHub shows that result.
-        code, out = self.rerun({"adlc.yml": [old, self.run_of(6)]}, {1: [self.job(11)], 6: [self.job(61, "success")]})
-        self.assertEqual(code, 0, out)
-        self.assertEqual(self.reran(), [])
-        self.assertIn("::notice::", out)
-        self.assertIn("https://github.com/o/r/actions/runs/1", out)
-        # A newer run of the other caller does not count.
-        code, out = self.rerun({"adlc.yml": [old], "adlc-review.yml": [self.run_of(7, "adlc-review.yml")]},
-                               {1: [self.job(11)], 7: [self.job(71, "success")]})
-        self.assertEqual(code, 1, out)
-        # The current run is the newer passed run of an old review run.
-        code, out = self.rerun({"adlc-review.yml": [self.run_of(2, "adlc-review.yml", sha="s6")]}, {2: [self.job(21)]})
-        self.assertEqual(code, 0, out)
-        self.assertEqual(self.reran(), [])
-
-    def test_approval_re_run_waits_only_for_a_failed_or_running_approval(self):
-        # The t3-approval of run 1 runs, then fails while its checks job runs, then the run completes.
-        polls = [[self.run_of(1, status="in_progress")]] * 2 + [[self.run_of(1)]]
-        jobs = [[self.job(11, status="in_progress")], [self.job(11)], [self.job(11)]]
-        code, out = self.rerun({"adlc.yml": polls}, {1: jobs})
-        self.assertEqual(code, 0, out)
-        self.assertEqual(self.reran(), ["11"])
-        self.assertEqual(self.polls(), 3)
-        # A passed t3-approval in a run that still runs: no wait, no re-run.
-        code, out = self.rerun({"adlc.yml": [self.run_of(1, status="in_progress")]},
-                               {1: [self.job(11, "success"), self.job(12, None, "checks", "in_progress")]})
-        self.assertEqual(code, 0, out)
-        self.assertEqual(self.reran(), [])
-        self.assertEqual(self.polls(), 1)
-        # The head moves during the wait.
-        code, out = self.rerun({"adlc.yml": [self.run_of(1, status="in_progress")]},
-                               {1: [self.job(11, status="in_progress")]}, head=["h2", "h2", "h3"])
-        self.assertEqual(code, 0, out)
-        self.assertEqual(self.reran(), [])
-        self.assertEqual(self.polls(), 3)
-        # The wait ends first.
-        code, out = self.rerun({"adlc.yml": [self.run_of(1, status="in_progress")]},
-                               {1: [self.job(11, status="in_progress")]}, wait="0")
-        self.assertEqual(code, 1, out)
-        self.assertEqual(self.reran(), [])
-        self.assertIn("https://github.com/o/r/actions/runs/1", out)
-        self.assertIn("by hand", out)
-
-    def test_approval_re_run_tries_a_failed_read_again(self):
-        flaky = {"GET repos/o/r/pulls/5": Seq([{"status": 502}, {"status": 502}, {"body": {"head": {"sha": "h2"}}}])}
-        code, out = self.rerun({"adlc.yml": [self.run_of(1)]}, {1: [self.job(11)]}, flaky)
-        self.assertEqual(code, 0, out)
-        self.assertEqual(self.reran(), ["11"])
-        down = {"GET repos/o/r/pulls/5": Seq([{"status": 502}] * 3 + [{"body": {"head": {"sha": "h2"}}}])}
-        code, out = self.rerun({"adlc.yml": [self.run_of(1)]}, {1: [self.job(11)]}, down)
-        self.assertEqual(code, 1, out)
-        self.assertEqual(self.reran(), [])
+        self.assertEqual(self.states(), ["pending", "success"] * 2 + ["pending"])
         self.assertIn("::error::", out)
-        self.assertIn("by hand", out)
-        self.assertIn("docs/sync.md", out)
 
-    def test_approval_re_run_counts_a_job_already_running_again(self):
-        refused = {"POST repos/o/r/actions/jobs/11/rerun": Seq([{"status": 403}])}
-        again = {**refused, "GET repos/o/r/actions/runs/1": {**self.run_of(1), "status": "queued"}}
-        code, out = self.rerun({"adlc.yml": [self.run_of(1)]}, {1: [self.job(11)]}, again)
+    def test_failed_job_posts_a_failed_status(self):
+        self.serve({"POST repos/o/r/statuses/h2": {}})
+        code, out = self.run_step(BASH, "adlc.yml", "Block the merge when this job fails", RUN_URL=RUN_URL)
         self.assertEqual(code, 0, out)
-        self.assertEqual(self.reran(), ["11"])
-        stuck = {**refused, "GET repos/o/r/actions/runs/1": self.run_of(1)}
-        code, out = self.rerun({"adlc.yml": [self.run_of(1)]}, {1: [self.job(11)]}, stuck)
-        self.assertEqual(code, 1, out)
-        self.assertIn("https://github.com/o/r/actions/runs/1", out)
+        self.assertEqual(self.states(), ["failure"])
 
-    def test_approval_re_run_stops_when_the_head_moved(self):
-        code, out = self.rerun({"adlc.yml": [self.run_of(1)], "adlc-review.yml": [self.run_of(2, "adlc-review.yml")]},
-                               {1: [self.job(11)], 2: [self.job(21)]}, head="h3")
+
+class DependabotStep(StepScript):
+    STEP = "Report that Dependabot PRs need no owner approval"
+
+    def test_dependabot_prs_need_no_owner_approval(self):
+        self.serve({"POST repos/o/r/statuses/h2": {}})
+        code, out = self.run_step(BASH, "adlc-dependabot.yml", self.STEP, RUN_URL=RUN_URL)
         self.assertEqual(code, 0, out)
-        self.assertEqual(self.reran(), [])
+        self.assertEqual([(p["context"], p["state"]) for p in self.posts()], [("adlc / t3-approval", "success")])
+        self.assertEqual(self.requests("POST"), ["repos/o/r/statuses/h2"])
+        # The status comes first, so a Dependabot PR that the tier step cannot tier still passes, as before.
+        with open(os.path.join(ROOT, ".github", "workflows", "adlc-dependabot.yml")) as f:
+            text = f.read()
+        self.assertLess(text.index(f"- name: {self.STEP}"), text.index("- id: meta"))

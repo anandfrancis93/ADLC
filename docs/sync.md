@@ -11,12 +11,13 @@ from that release. Each new release opens a sync PR in every repo behind it.
 - `.adlc/version` records the release the repo is on.
 - The `drift` check fails a PR when a managed file differs from the pinned release.
   It compares SHA-256 hashes written into the shared `adlc.yml`, so a repo cannot edit them.
-- A PR runs three jobs: `t3-approval`, `checks` and `pr-title`. `checks` runs drift, protected, secrets,
+- A PR runs three jobs: `tier`, `checks` and `pr-title`. `checks` runs drift, protected, secrets,
   design-md, fast-check and full-test as steps of one job. GitHub bills each job as at least one minute
   ([GitHub docs](https://docs.github.com/en/billing/reference/actions-runner-pricing)).
-- Review and label events run a separate caller, `adlc-review.yml`, with only `t3-approval`, `rerun-t3-approval`
-  and `review-budget`. A job skipped on those runs would report success under its check name, and hide a failure.
-  After the owner approves a T3 PR, `rerun-t3-approval` re-runs the failed `t3-approval` jobs of the earlier runs.
+- `tier` labels the PR and posts the commit status `adlc / t3-approval` ([risk-tiers.md](risk-tiers.md#t3-approval)).
+  The required checks are `adlc / checks`, `adlc / t3-approval` and `pr-title / pr-title`.
+- Review and label events run a separate caller, `adlc-review.yml`, with only `tier` and `review-budget`.
+  A job skipped on those runs would report success under its check name, and hide a failure.
 - A release tag starts `.github/workflows/sync-repos.yml` in this repo.
   It opens a sync PR in each repo on an older release.
 
@@ -89,13 +90,13 @@ Then:
 
 ### A T3 PR open across a sync
 
-A T3 PR that was open when the repo merged a sync PR has an `ADLC` run of the release before.
-A re-run of one job uses the shared workflow of the run's first attempt
-([GitHub docs](https://docs.github.com/en/actions/reference/workflows-and-actions/reusing-workflow-configurations#behavior-of-reusable-workflows-when-re-running-jobs)),
-so the old drop step would remove the label again. So `rerun-t3-approval` does not re-run that run, and fails with its link.
-After the owner approves, move the PR to draft and back once. The new `ADLC` run uses the new release and passes.
-The red `rerun-t3-approval` check stays until the next label or review event. It is not a required check,
-so it does not block the merge.
+A T3 PR that was open when the repo merged a sync PR can hold the runs of the release before.
+Before 0.8.0, `adlc / t3-approval` was a job, and its failed check stays on that commit.
+GitHub requires both to pass when a check and a commit status share a name
+([GitHub docs](https://docs.github.com/en/pull-requests/how-tos/merge-and-close-pull-requests/troubleshooting-required-status-checks)).
+So update the PR's branch from `main` once, with `gh pr update-branch <number>`, before the owner approves.
+The new commit gets runs of the new release, and only the status.
+An update after the approval makes a new commit, so CI drops the label, and the owner approves again.
 
 ### First sync of a repo set up by copying (v0.3.0 or earlier)
 

@@ -20,17 +20,26 @@ major updates T2, whatever files they touch ([toolchain.md](toolchain.md)).
 
 ## T3 approval
 
-The `t3-approval` check passes when the owner (the `ADLC_OWNER` variable) did one of these:
+`adlc / t3-approval` is a commit status on the PR's head commit. The `tier` job posts it on each push,
+label change and review. A T3 change passes when the owner (the `ADLC_OWNER` variable) did one of these:
 
 - Added the `adlc:t3-approved` label after the latest commit and after the newest force push,
   and no one changed that label since. CI removes the label after each new commit, unless the label
   was added after GitHub created the run of that push. A re-run of that run keeps the label too.
 - Approved the latest commit in a review.
 
-The run that a push starts fails `t3-approval` until the owner approves. GitHub keeps that failed check
-after a later run passes. So after the approval, the `rerun-t3-approval` job of `adlc-review.yml`
-re-runs the failed `t3-approval` jobs of the earlier runs on that commit. No one re-runs a job by hand.
-If that job fails, its error says which `t3-approval` jobs to re-run by hand.
+Until then, the status is pending, and a pending required check blocks the merge.
+The `tier` job itself passes, so GitHub sends no failure email while the PR waits.
+GitHub counts the latest status of each name, so the run of the owner's label or review turns it to success.
+No one re-runs a job or moves the PR to draft.
+T1 and T2 changes, and Dependabot PRs, get a passing status at once.
+When the `tier` job fails, it posts a failed status, so the merge stays blocked.
+The job runs no file from the PR, because it can write statuses. It runs the ADLC's own `adlc.py` at the release.
+Any workflow of the repo can post a status, and GitHub shows each as from GitHub Actions.
+So a PR from a branch of the repo could post `success` on another PR. A fork PR cannot, as its token can only read.
+The owner accepted this risk in the [spec](../intent/2026-10-24-t3-approval-without-failed-runs/spec.md).
+So before an agent merges a T3 PR, it checks the owner's label or review itself (the `adlc-release` skill, step 3).
+To wait for the other checks before the approval, watch the `ADLC` run with `gh run watch`, not `gh pr checks --watch`.
 One exception: a T3 PR that was open when its repo moved to a new release ([sync.md](sync.md#a-t3-pr-open-across-a-sync)).
 
 GitHub does not let a PR's author approve it

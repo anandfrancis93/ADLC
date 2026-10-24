@@ -2,7 +2,7 @@
 
 ## [0.8.0] - 2026-10-24
 
-_To upgrade a repo, do what the Breaking line asks in its sync PR, then merge it. A T3 PR that is open when the sync PR merges needs its branch updated once, with `gh pr update-branch <number>`, before the owner approves it (`docs/sync.md`)._
+_To upgrade a repo, do what the Breaking lines ask in its sync PR, then merge it. A T3 PR that is open when the sync PR merges needs its branch updated once, with `gh pr update-branch <number>`, before the owner approves it (`docs/sync.md`)._
 
 ### Changed
 

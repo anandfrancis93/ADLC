@@ -1,5 +1,6 @@
 # ADLC tier for Dependabot PRs. The ADLC manages this file: `adlc.py sync` writes it, and the drift check fails if it changes.
 # Uses pull_request_target because Dependabot's pull_request token is read-only.
+# statuses: write lets it post the commit status t3-approval, which passes: no Dependabot PR is T3.
 # The called workflow never checks out or runs the PR's code.
 name: ADLC Dependabot tier
 
@@ -10,6 +11,7 @@ on:
 permissions:
   pull-requests: write
   issues: write
+  statuses: write
 
 jobs:
   tier:

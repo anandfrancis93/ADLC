@@ -1,11 +1,13 @@
 # ADLC checks on pull_request, shared. Repos call this workflow from the .github/workflows/adlc.yml
 # that `adlc.py sync` writes, pinned to a release tag. It runs in the calling repo: the checkout,
-# the scripts in .adlc/scripts and the token are that repo's. See docs/sync.md.
+# the scripts in .adlc/scripts and the token are that repo's. The tier job runs the ADLC's own
+# adlc.py at this release instead. See docs/sync.md.
 # Review and label events run adlc-review.yml instead. A job skipped on those runs would report
 # success under the same check name, so no job here runs on them.
-# Required checks: checks and t3-approval. The old checks drift, fast-check, secrets, protected and
-# full-test are steps of the checks job, under the same names. design-md is a step that never blocks.
-# Dependabot PRs get their tier from adlc-dependabot.yml instead (their pull_request token is read-only).
+# Required checks: checks, a job, and t3-approval, the commit status that the tier job posts.
+# The old checks drift, fast-check, secrets, protected and full-test are steps of the checks job,
+# under the same names. design-md is a step that never blocks.
+# Dependabot PRs get their tier and t3-approval from adlc-dependabot.yml (their pull_request token is read-only).
 name: ADLC
 
 on:
@@ -19,11 +21,13 @@ on:
 # No workflow-level permissions: each job names its own, and the caller's grant caps them.
 # A block names the scopes the job gets. Each scope it leaves out is none.
 jobs:
-  # The tier, its label and, for a T3 PR, the owner's approval, in one job. So a tier that fails
-  # also fails this check: a skipped required check would count as passed. adlc.yml and adlc-review.yml
-  # run the same job. GitHub keeps the failed check of an earlier run after a later run passes, so after
-  # the owner approves, rerun-t3-approval in adlc-review.yml re-runs the failed job of the earlier runs.
-  t3-approval:
+  # The tier, its label and the owner's approval, in one job. adlc.yml and adlc-review.yml run the same job.
+  # The approval is the commit status "adlc / t3-approval" on the head commit, not the result of this job.
+  # A T3 change waits as pending: the run passes, so GitHub sends no failure email, and the merge stays blocked.
+  # GitHub counts the latest status of each name, so a label or review event turns it to success with no re-run.
+  # When this job fails, its last step posts failure, so a failed tier blocks the merge.
+  # This job can write statuses, so it runs no file from the PR, only the ADLC's own adlc.py.
+  tier:
     if: github.event.pull_request.user.login != 'dependabot[bot]'
     runs-on: ubuntu-latest
     permissions:
@@ -32,8 +36,7 @@ jobs:
       contents: read
       issues: write
       pull-requests: write
-    outputs:
-      tier: ${{ steps.tier.outputs.tier }}
+      statuses: write
     steps:
       # A re-run keeps the event, so this step runs again on each re-run of a push run. The run's
       # created_at stays the same on a re-run. A label added after that time approved this commit, so the step keeps it.
@@ -59,17 +62,31 @@ jobs:
           if ! out=$(gh api -X DELETE "repos/$GITHUB_REPOSITORY/issues/$PR/labels/adlc:t3-approved" 2>&1); then
             case "$out" in *"HTTP 404"*) ;; *) echo "$out" >&2; exit 1 ;; esac
           fi
+      # The ADLC at the commit of this workflow, which is the release the caller pins. The drift step holds
+      # the repo's .adlc/scripts/adlc.py to the same file. Code of the PR in an earlier step of this job could
+      # change each later step through $GITHUB_ENV, $GITHUB_PATH or the runner's files, so no step runs any.
       - uses: actions/checkout@v7
         with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: adlc-release
+          persist-credentials: false
+      # The PR only as data: the list of changed files, and its .adlc/tiers.
+      - uses: actions/checkout@v7
+        with:
+          path: pr
           fetch-depth: 0
+          persist-credentials: false
       # bash with pipefail: a failed git diff must fail the step, not give an empty list (T1).
+      # python3 -I: no file of the PR's folder is imported.
       - id: tier
         shell: bash
+        working-directory: pr
         env:
           BASE: ${{ github.event.pull_request.base.sha }}
           HEAD: ${{ github.event.pull_request.head.sha }}
         run: |
-          tier=$(git diff --name-only "$BASE...$HEAD" | python3 .adlc/scripts/adlc.py tier --explain)
+          tier=$(git diff --name-only "$BASE...$HEAD" | python3 -I ../adlc-release/scripts/adlc.py tier --explain)
           echo "tier=$tier" >> "$GITHUB_OUTPUT"
           echo "Tier: $tier" >> "$GITHUB_STEP_SUMMARY"
       - name: Label the PR with its tier
@@ -86,21 +103,51 @@ jobs:
       # The commit reached GitHub when its first check suite was created. A label older than that
       # approved an earlier commit. So does a label older than the newest force push, which can bring
       # back a commit with older check suites.
-      - name: Check the owner's approval
-        if: steps.tier.outputs.tier == 'T3'
+      # Two runs on one commit can overlap, such as the run of a push and the run of a label added just after.
+      # So after each post, the step reads the approval again, and posts again when it changed.
+      - name: Report the owner's approval
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           PR: ${{ github.event.pull_request.number }}
           HEAD: ${{ github.event.pull_request.head.sha }}
           OWNER: ${{ inputs.owner }}
+          TIER: ${{ steps.tier.outputs.tier }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR/reviews" | jq -s 'add // []' > "$RUNNER_TEMP/reviews.json"
-          gh api --paginate "repos/$GITHUB_REPOSITORY/issues/$PR/events" | jq -s 'add // []' > "$RUNNER_TEMP/events.json"
-          since=$(gh api "repos/$GITHUB_REPOSITORY/commits/$HEAD/check-suites?per_page=100" \
-            --jq '[.check_suites[].created_at] | min // ""')
-          python3 -I .adlc/scripts/adlc.py t3-approved --owner "$OWNER" --head "$HEAD" --since "$since" \
-            --reviews "$RUNNER_TEMP/reviews.json" --events "$RUNNER_TEMP/events.json"
+          posted=""
+          for n in 1 2 3 4 5; do
+            since=""
+            if [ "$TIER" = T3 ]; then
+              gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR/reviews" | jq -s 'add // []' > "$RUNNER_TEMP/reviews.json"
+              gh api --paginate "repos/$GITHUB_REPOSITORY/issues/$PR/events" | jq -s 'add // []' > "$RUNNER_TEMP/events.json"
+              since=$(gh api "repos/$GITHUB_REPOSITORY/commits/$HEAD/check-suites?per_page=100" \
+                --jq '[.check_suites[].created_at] | min // ""')
+            fi
+            status=$(python3 -I adlc-release/scripts/adlc.py t3-status --tier "$TIER" --owner "$OWNER" --head "$HEAD" \
+              --since "$since" --reviews "$RUNNER_TEMP/reviews.json" --events "$RUNNER_TEMP/events.json")
+            if [ "$status" = "$posted" ]; then
+              exit 0
+            fi
+            gh api -X POST "repos/$GITHUB_REPOSITORY/statuses/$HEAD" -f context="adlc / t3-approval" \
+              -f state="$(jq -r .state <<< "$status")" -f description="$(jq -r .description <<< "$status")" \
+              -f target_url="$RUN_URL" > /dev/null
+            echo "Posted adlc / t3-approval (read $n): $status"
+            posted=$status
+          done
+          echo "::error::The owner's approval changed on each of 5 reads. Add the label again to check it again." >&2
+          exit 1
+      # Without this step, a success that an earlier run posted on the same commit would stay after an error.
+      - name: Block the merge when this job fails
+        if: failure() || cancelled()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          gh api -X POST "repos/$GITHUB_REPOSITORY/statuses/$HEAD" -f context="adlc / t3-approval" -f state=failure \
+            -f description="The tier job failed, so the approval was not checked. See the run." \
+            -f target_url="$RUN_URL" > /dev/null
 
   # All the other checks, in one job, because GitHub bills each job as at least one minute.
   # Each step after drift runs also when an earlier step fails, so one run reports every failure.
@@ -121,12 +168,12 @@ jobs:
           version=0.7.0
           manifest='
           967d9afb101346667166f2e76e81910bc190488d7d41d50ca0072e9d92f00e32 .adlc/version
-          bb3cef8e76ac765c425b6c896acb2f98b24a8f34c0d7c0d5f492e95ad974a625 .adlc/scripts/adlc.py
+          ef1f91c1bce218bf1cd7aa5ab1a63abf74b48e83a0604cc10278a68b6aca83df .adlc/scripts/adlc.py
           378599cfc8ee4962b68b511d653d536cf6b848af107a3109e32cae989f9f7d00 .githooks/pre-commit
-          a267da01785fb1dfe27b9ebdb6a05b3e8fd6317d25de0706b53aa31ddf6e1f05 .github/workflows/adlc.yml
-          755c40781b0746b95dc67efcfb6016dc14c3a27234aa0d199c3f540d95f8b745 .github/workflows/adlc-review.yml
+          a68c3ffe1cbcf9aaabdddb8da9bedea6c11cb9accf09238a737e3d0be292a42f .github/workflows/adlc.yml
+          504e5b95f187dacbf2f5bba04518e281345f5fb84b11c99832ffc3f0744e6e63 .github/workflows/adlc-review.yml
           257d5af4e865f213dde18ee1bb5add2bd3173731fa8da80f4d29b27f22c69de9 .github/workflows/adlc-pr-title.yml
-          128d5014526063618336f3726ac4c1f8eec5ad93784b6677ee7101cd79fd1952 .github/workflows/adlc-dependabot.yml
+          43be5c98e610c530ef3f2064a33608a82e1784cb460286f40426657dd3903359 .github/workflows/adlc-dependabot.yml
           1c526d4650b0ac9a30b77d93dd65a54ce5fd65ce609ae93379e9189d67c3cfab .github/pull_request_template.md
           b520b6889a860080a4258e7db16ebd647020b8f6f9eec651669f9a253e2da071 .github/workflows/adlc-release.yml optional
           '

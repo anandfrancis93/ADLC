@@ -1,6 +1,7 @@
 # ADLC tier for Dependabot PRs, shared. Repos call it from the .github/workflows/adlc-dependabot.yml
 # that `adlc.py sync` writes, on pull_request_target. See docs/sync.md.
 # Patch and minor version updates are T1, majors are T2, whatever paths they touch.
+# It also posts the commit status adlc / t3-approval that each repo requires. No Dependabot PR is T3, so it passes.
 # The caller uses pull_request_target because Dependabot's pull_request token is read-only.
 # This workflow never checks out or runs the PR's code.
 name: ADLC Dependabot tier
@@ -11,12 +12,22 @@ on:
 permissions:
   pull-requests: write
   issues: write
+  statuses: write
 
 jobs:
   tier:
     if: github.event.pull_request.user.login == 'dependabot[bot]'
     runs-on: ubuntu-latest
     steps:
+      # The tier jobs of adlc.yml and adlc-review.yml skip Dependabot PRs, so this job posts the status.
+      - name: Report that Dependabot PRs need no owner approval
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          gh api -X POST "repos/$GITHUB_REPOSITORY/statuses/$HEAD" -f context="adlc / t3-approval" -f state=success \
+            -f description="Dependabot: no owner approval needed." -f target_url="$RUN_URL" > /dev/null
       - id: meta
         uses: dependabot/fetch-metadata@v3
       - env:

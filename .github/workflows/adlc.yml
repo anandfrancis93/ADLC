@@ -16,20 +16,27 @@ on:
         type: string
         default: ""
 
-permissions:
-  contents: read
-  pull-requests: write
-  issues: write
-  checks: read
-
+# No workflow-level permissions: each job names its own, and the caller's grant caps them.
+# A block names the scopes the job gets. Each scope it leaves out is none.
 jobs:
   # The tier, its label and, for a T3 PR, the owner's approval, in one job. So a tier that fails
   # also fails this check: a skipped required check would count as passed. adlc.yml and adlc-review.yml
-  # run the same job, so a review or a label change re-checks the approval under the same check name.
+  # run the same job. GitHub keeps the failed check of an earlier run after a later run passes, so after
+  # the owner approves, rerun-t3-approval in adlc-review.yml re-runs the failed job of the earlier runs.
   t3-approval:
     if: github.event.pull_request.user.login != 'dependabot[bot]'
     runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      checks: read
+      contents: read
+      issues: write
+      pull-requests: write
+    outputs:
+      tier: ${{ steps.tier.outputs.tier }}
     steps:
+      # A re-run keeps the event, so this step runs again on each re-run of a push run. The run's
+      # created_at stays the same on a re-run. A label added after that time approved this commit, so the step keeps it.
       # The approval step also ignores a label older than the commit, so this is a second guard.
       - name: Drop the T3 approval label after a new commit
         if: github.event.action == 'synchronize'
@@ -38,6 +45,17 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           PR: ${{ github.event.pull_request.number }}
         run: |
+          created=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" --jq .created_at)
+          added=$(gh api --paginate "repos/$GITHUB_REPOSITORY/issues/$PR/events" | jq -rs --arg since "$created" '
+            [add // [] | .[] | select(.event == "labeled" or .event == "unlabeled")
+              | select(.label.name == "adlc:t3-approved")]
+            | sort_by(.created_at, .id) | last
+            | if . != null and .event == "labeled" and (.created_at | fromdateiso8601) > ($since | fromdateiso8601)
+              then .created_at else "" end')
+          if [ -n "$added" ]; then
+            echo "Kept adlc:t3-approved: it was added at $added, after this run was created at $created."
+            exit 0
+          fi
           if ! out=$(gh api -X DELETE "repos/$GITHUB_REPOSITORY/issues/$PR/labels/adlc:t3-approved" 2>&1); then
             case "$out" in *"HTTP 404"*) ;; *) echo "$out" >&2; exit 1 ;; esac
           fi
@@ -66,7 +84,8 @@ jobs:
       # latest commit reached GitHub, or an approving review of the latest commit. GitHub does not let
       # a PR's author approve it, so the label also works on PRs opened from the owner's account.
       # The commit reached GitHub when its first check suite was created. A label older than that
-      # approved an earlier commit.
+      # approved an earlier commit. So does a label older than the newest force push, which can bring
+      # back a commit with older check suites.
       - name: Check the owner's approval
         if: steps.tier.outputs.tier == 'T3'
         shell: bash
@@ -102,10 +121,10 @@ jobs:
           version=0.6.0
           manifest='
           97a5d6e540a6120d09c39ddb667e0e8e2bac7fcc2ffef813b82e08fd60365bce .adlc/version
-          e3a3349858826b42042c2329f6e2ad4f81292cd9007b8ee71d28ef63f01866c3 .adlc/scripts/adlc.py
+          bb3cef8e76ac765c425b6c896acb2f98b24a8f34c0d7c0d5f492e95ad974a625 .adlc/scripts/adlc.py
           378599cfc8ee4962b68b511d653d536cf6b848af107a3109e32cae989f9f7d00 .githooks/pre-commit
-          db7ac189a11e81d143b2e3829c58ecc772ca07346d1ffce3c7ba5f2edcd8e79a .github/workflows/adlc.yml
-          ee198346f16aae6cebe33b433c5df2bad34aeaa750aa4cfd41d6a1bb391869b1 .github/workflows/adlc-review.yml
+          b86b4ec36a72b3b61f74fb352ffcba26c6f9203967edcf7ed26ab4ebe9038601 .github/workflows/adlc.yml
+          19be9e044dac30cb3460d7c78af59d6cfcd8769976de0f3bed367558d88658d1 .github/workflows/adlc-review.yml
           a61f64347d11d717d30d8b054052fd4c0edc63934c8bb00061783999a4b40f35 .github/workflows/adlc-pr-title.yml
           ef7d9ad7dc40d503fdbf0f4f85ff516207b9eb716d7c07419f5aedb241ba3141 .github/workflows/adlc-dependabot.yml
           1c526d4650b0ac9a30b77d93dd65a54ce5fd65ce609ae93379e9189d67c3cfab .github/pull_request_template.md
